@@ -1,0 +1,64 @@
+Calling std::random or rand_s causes crash on Windows 2000, because they never added a fallback handler to use
+the (less secure, but Win2K compatible) CryptGenRandom when RtlGenRandom fails. Fix and add fallback.
+
+diff --git a/mingw-w64-crt/secapi/rand_s.c b/mingw-w64-crt/secapi/rand_s.c
+index 52700ba..72106f8 100644
+--- a/mingw-w64-crt/secapi/rand_s.c
++++ b/mingw-w64-crt/secapi/rand_s.c
+@@ -1,15 +1,42 @@
+ #define _CRT_RAND_S
+ #include <stdlib.h>
++#include <stdbool.h>
+ #include <windows.h>
+ #include <ntsecapi.h>
+ #include <errno.h>
+ #include <msvcrt.h>
+ 
+ static BOOLEAN (WINAPI *pRtlGenRandom)(void*,ULONG);
++static BOOLEAN (WINAPI *pCryptAcquireContext)(HCRYPTPROV*,LPCWSTR,LPCWSTR,DWORD,DWORD);
++static BOOLEAN (WINAPI *pCryptGenRandom)(HCRYPTPROV,DWORD,BYTE*);
++static BOOLEAN (WINAPI *pCryptReleaseContext)(HCRYPTPROV,DWORD);
+ 
+ static errno_t mingw_rand_s(unsigned int *pval)
+ {
+-    return !pval || !pRtlGenRandom || !pRtlGenRandom(pval, sizeof(*pval)) ? EINVAL : 0;
++    if (!pval) {
++        return EINVAL;
++    }
++    if (pRtlGenRandom) {
++        return !pRtlGenRandom(pval, sizeof(*pval)) ? EINVAL : 0;
++    } else {
++        if (!pCryptAcquireContext || !pCryptGenRandom || !pCryptReleaseContext) {
++            return EINVAL;
++        }
++        unsigned int kSeed = 0;
++        HCRYPTPROV hProvider = 0;
++        BOOL bCryptGen = false;
++        // CryptGenRandom is available on Windows 2000+ (unlike RtlGenRandom/rand_s which requires XP+)
++        if (pCryptAcquireContext(&hProvider, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
++            bCryptGen = pCryptGenRandom(hProvider, sizeof(*pval), (BYTE*)(&kSeed));
++            pCryptReleaseContext(hProvider, 0);
++        }
++        if (!bCryptGen || kSeed == 0) {
++            return EINVAL;
++        } else {
++            *pval = kSeed;
++            return 0;
++        }
++    }
+ }
+ 
+ static errno_t __cdecl init_rand_s(unsigned int*);
+@@ -29,7 +56,12 @@ static errno_t __cdecl init_rand_s(unsigned int *val)
+     func = (void*)GetProcAddress(__mingw_get_msvcrt_handle(), "rand_s");
+     if(!func) {
+         func = mingw_rand_s;
++        // RtlGenRandom has no import lib definition, use SystemFunction036.
+         pRtlGenRandom = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "SystemFunction036");
++        // CryptGenRandom is available on Windows 2000+ (unlike RtlGenRandom which requires XP+)
++        pCryptGenRandom = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "CryptGenRandom");
++        pCryptAcquireContext = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "CryptAcquireContextW");
++        pCryptReleaseContext = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "CryptReleaseContext");
+     }
+ 
+     return (__MINGW_IMP_SYMBOL(rand_s) = func)(val);
