@@ -16,11 +16,11 @@ index 8b888fe5..8712e85a 100644
 --- a/binutils/dlltool.c
 +++ b/binutils/dlltool.c
 @@ -3647,6 +3647,7 @@ fill_ordinals (export_type **d_export_vec)
-                goto done;
-              }
-        done:;
-+               d_export_vec[i]->ordinal = 0;
-        }
+ 		goto done;
+ 	      }
+ 	done:;
++		d_export_vec[i]->ordinal = 0;
+ 	}
      }
  
 @@ -3672,7 +3673,7 @@ mangle_defs (void)

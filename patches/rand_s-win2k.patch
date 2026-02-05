@@ -2,17 +2,18 @@ Calling std::random or rand_s causes crash on Windows 2000, because they never a
 the (less secure, but Win2K compatible) CryptGenRandom when RtlGenRandom fails. Fix and add fallback.
 
 diff --git a/mingw-w64-crt/secapi/rand_s.c b/mingw-w64-crt/secapi/rand_s.c
-index 52700ba..72106f8 100644
+index 2873fe8..7c3ffe1 100644
 --- a/mingw-w64-crt/secapi/rand_s.c
 +++ b/mingw-w64-crt/secapi/rand_s.c
-@@ -1,15 +1,42 @@
+@@ -1,5 +1,6 @@
  #define _CRT_RAND_S
  #include <stdlib.h>
 +#include <stdbool.h>
  #include <windows.h>
  #include <ntsecapi.h>
  #include <errno.h>
- #include <msvcrt.h>
+@@ -9,10 +10,36 @@
+ #endif
  
  static BOOLEAN (WINAPI *pRtlGenRandom)(void*,ULONG);
 +static BOOLEAN (WINAPI *pCryptAcquireContext)(HCRYPTPROV*,LPCWSTR,LPCWSTR,DWORD,DWORD);
@@ -49,13 +50,11 @@ index 52700ba..72106f8 100644
  }
  
  static errno_t __cdecl init_rand_s(unsigned int*);
-@@ -29,7 +56,12 @@ static errno_t __cdecl init_rand_s(unsigned int *val)
-     func = (void*)GetProcAddress(__mingw_get_msvcrt_handle(), "rand_s");
-     if(!func) {
-         func = mingw_rand_s;
-+        // RtlGenRandom has no import lib definition, use SystemFunction036.
+@@ -38,6 +65,10 @@ static errno_t __cdecl init_rand_s(unsigned int *val)
+         /* Function RtlGenRandom() is located in library advapi32.dll under
+          * symbol "SystemFunction036" and is available since Windows XP. */
          pRtlGenRandom = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "SystemFunction036");
-+        // CryptGenRandom is available on Windows 2000+ (unlike RtlGenRandom which requires XP+)
++        // CryptGenRandom is available on Windows 2000+
 +        pCryptGenRandom = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "CryptGenRandom");
 +        pCryptAcquireContext = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "CryptAcquireContextW");
 +        pCryptReleaseContext = (void*)GetProcAddress(LoadLibraryW(L"advapi32.dll"), "CryptReleaseContext");
