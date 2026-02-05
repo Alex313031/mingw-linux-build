@@ -17,7 +17,8 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-ROOT_PATH="$HOME/workon/mingw/build"
+export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+ROOT_PATH="$HERE/build"
 
 MINGW_W64_URL="https://git.code.sf.net/p/mingw-w64/mingw-w64"
 MINGW_W64_BRANCH="master"
@@ -156,8 +157,31 @@ download_sources()
             "https://gitweb.git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
 }
 
+apply_patches()
+{
+    printf "Applying patches\n"
+    mkdir -p $SRC_PATH/patches/ &&
+    cp -f -v $HERE/patches/*.patch $SRC_PATH/patches/ &&
+    cd $SRC_PATH/binutils &&
+    git apply --reject ../patches/binutils-dlltool-zero-ordinals.patch &&
+    cd $SRC_PATH/gcc &&
+    git apply --reject ../patches/gcc-stdcall-align.patch &&
+    git apply --reject ../patches/gcc-trap-terminate.patch &&
+    #git apply --reject ../patches/gdb-alternate-main.patch &&
+    cd $SRC_PATH/mingw-w64 &&
+    git apply --reject ../patches/gendef-no-comment.patch &&
+    git apply --reject ../patches/rand_s-win2k.patch &&
+    touch $SRC_PATH/patches/applied_patches &&
+    cd $HERE
+}
+
 build()
 {
+    if [[ -f "$SRC_PATH/patches/applied_patches" ]]; then
+        printf "Already applied patches\n"
+    else
+        apply_patches
+    fi
     local arch="$1"
     local prefix="$2"
     shift 2
