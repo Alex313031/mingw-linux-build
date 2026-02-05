@@ -8,9 +8,12 @@ to such functions so that GCC re-aligns the stack.
 Note: main, wmain, WinMain, and wWinMain are special cases which the CRT
 calls with 16-byte alignment.
 
+
+diff --git a/gcc/config/i386/i386-options.cc b/gcc/config/i386/i386-options.cc
+index 4d52d102a..ce72c008e 100644
 --- a/gcc/config/i386/i386-options.cc
 +++ b/gcc/config/i386/i386-options.cc
-@@ -3689,7 +3689,7 @@
+@@ -3718,7 +3718,7 @@ ix86_offload_options (void)
     arguments as in struct attribute_spec.handler.  */
  
  static tree
@@ -19,7 +22,7 @@ calls with 16-byte alignment.
  			     bool *no_add_attrs)
  {
    if (TREE_CODE (*node) != FUNCTION_TYPE
-@@ -3773,6 +3773,11 @@
+@@ -3802,6 +3802,11 @@ ix86_handle_cconv_attribute (tree *node, tree name, tree args, int,
       sseregparm.  */
    else if (is_attribute_p ("stdcall", name))
      {

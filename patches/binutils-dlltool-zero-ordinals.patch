@@ -11,14 +11,33 @@ and ought to be a syntax error, as it is with MSVC lib.exe. (This patch
 should probably make it so.) I could find no examples of this situation
 in the wild.
 
+diff --git a/binutils/dlltool.c b/binutils/dlltool.c
+index 8b888fe5..8712e85a 100644
 --- a/binutils/dlltool.c
 +++ b/binutils/dlltool.c
-@@ -3701,2 +3701,3 @@
- 	done:;
-+	  d_export_vec[i]->ordinal = 0;
- 	}
-@@ -3759,3 +3760,3 @@
+@@ -3647,6 +3647,7 @@ fill_ordinals (export_type **d_export_vec)
+                goto done;
+              }
+        done:;
++               d_export_vec[i]->ordinal = 0;
+        }
+     }
+ 
+@@ -3672,7 +3673,7 @@ mangle_defs (void)
+   export_type *exp;
+ 
+   int i;
+-  int hint = 0;
++  [[maybe_unused]] int hint = 0;
+   export_type **d_export_vec = xmalloc (sizeof (export_type *) * d_nfuncs);
+ 
+   inform (_("Processing definitions"));
+@@ -3706,7 +3707,7 @@ mangle_defs (void)
+   /* Fill exp entries with their hint values.  */
+   for (i = 0; i < d_nfuncs; i++)
      if (!d_exports_lexically[i]->noname || show_allnames)
 -      d_exports_lexically[i]->hint = hint++;
 +      d_exports_lexically[i]->hint = 0;
  
+   inform (_("Processed definitions"));
+ }
