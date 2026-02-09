@@ -6,3 +6,6 @@ Thumbs.db
 
 # Built Files
 /build/*
+
+# Other
+/copy.sh

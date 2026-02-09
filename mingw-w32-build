@@ -19,6 +19,9 @@
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build"
+SRC_PATH="$ROOT_PATH/src"
+BLD_PATH="$ROOT_PATH/bld"
+LOG_FILE="$ROOT_PATH/build.log"
 
 MINGW_W64_URL="https://git.code.sf.net/p/mingw-w64/mingw-w64"
 MINGW_W64_BRANCH="master"
@@ -29,10 +32,9 @@ GCC_BRANCH="releases/gcc-15"
 WIN32_WINNT="0x500"
 
 ENABLE_THREADS="--enable-threads=posix"
+LINKED_RUNTIME="msvcrt"
 
 JOB_COUNT=$(getconf _NPROCESSORS_ONLN)
-
-LINKED_RUNTIME="msvcrt"
 
 show_help()
 {
@@ -515,10 +517,6 @@ fi
 if [ "$ROOT_PATH_ARG" ]; then
     ROOT_PATH=$(mkdir -p "$ROOT_PATH_ARG" && cd "$ROOT_PATH_ARG" && pwd)
 fi
-
-SRC_PATH="$ROOT_PATH/src"
-BLD_PATH="$ROOT_PATH/bld"
-LOG_FILE="$ROOT_PATH/build.log"
 
 if [ "$PREFIX" ]; then
     I586_PREFIX="$PREFIX"
