@@ -6,6 +6,7 @@ Thumbs.db
 
 # Built Files
 /build/*
+/release/
 
 # Other
 /copy.sh
