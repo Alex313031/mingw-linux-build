@@ -2,7 +2,7 @@ Calling std::random or rand_s causes crash on Windows 2000, because they never a
 the (less secure, but Win2K compatible) CryptGenRandom when RtlGenRandom fails. Fix and add fallback.
 
 diff --git a/mingw-w64-crt/secapi/rand_s.c b/mingw-w64-crt/secapi/rand_s.c
-index 2873fe8..7c3ffe1 100644
+index 2873fe8..a78f5aa 100644
 --- a/mingw-w64-crt/secapi/rand_s.c
 +++ b/mingw-w64-crt/secapi/rand_s.c
 @@ -1,5 +1,6 @@
@@ -29,14 +29,14 @@ index 2873fe8..7c3ffe1 100644
 +    if (pRtlGenRandom) {
 +        return !pRtlGenRandom(pval, sizeof(*pval)) ? EINVAL : 0;
 +    } else {
-+        if (!pCryptAcquireContext || !pCryptGenRandom || !pCryptReleaseContext) {
++        if (!pCryptGenRandom || !pCryptAcquireContext || !pCryptReleaseContext) {
 +            return EINVAL;
 +        }
 +        unsigned int kSeed = 0;
 +        HCRYPTPROV hProvider = 0;
 +        BOOL bCryptGen = false;
 +        // CryptGenRandom is available on Windows 2000+ (unlike RtlGenRandom/rand_s which requires XP+)
-+        if (pCryptAcquireContext(&hProvider, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
++        if (pCryptAcquireContext(&hProvider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
 +            bCryptGen = pCryptGenRandom(hProvider, sizeof(*pval), (BYTE*)(&kSeed));
 +            pCryptReleaseContext(hProvider, 0);
 +        }
