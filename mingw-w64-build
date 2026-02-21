@@ -1,6 +1,7 @@
 #!/bin/bash
 #
 # Copyright (C) 2025 Kyle Schwarz <zeranoe@gmail.com>
+# Copyright (C) 2026 Alex Frick <alex313031@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,21 +17,25 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-ROOT_PATH="$HOME/.zeranoe/mingw-w64"
+export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+ROOT_PATH="$HERE/build"
+SRC_PATH="$ROOT_PATH/src"
+BLD_PATH="$ROOT_PATH/bld"
+LOG_FILE="$ROOT_PATH/build.log"
 
-MINGW_W64_URL="https://git.code.sf.net/p/mingw-w64/mingw-w64"
-MINGW_W64_BRANCH="master"
-BINUTILS_URL="https://sourceware.org/git/binutils-gdb.git"
+MINGW_W64_URL="https://github.com/mingw-w64/mingw-w64.git"
+MINGW_W64_BRANCH="v13.x"
+BINUTILS_URL="https://git.sr.ht/~sourceware/binutils-gdb"
 BINUTILS_BRANCH="binutils-2_45-branch"
-GCC_URL="https://gcc.gnu.org/git/gcc.git"
+GCC_URL="https://git.sr.ht/~sourceware/gcc"
 GCC_BRANCH="releases/gcc-15"
-WIN32_WINNT="0x601"
+
+WIN32_WINNT="0"
 
 ENABLE_THREADS="--enable-threads=posix"
-
-JOB_COUNT=$(($(getconf _NPROCESSORS_ONLN) + 2))
-
 LINKED_RUNTIME="msvcrt"
+
+JOB_COUNT=$(getconf _NPROCESSORS_ONLN)
 
 show_help()
 {
@@ -50,6 +55,7 @@ Options:
   -r <path>, --root <path>     location for sources, build artifacts and the resulting compiler (default: $ROOT_PATH)
   --keep-artifacts             don't remove source and build files after a successful build
   --disable-threads            disable pthreads and STL <thread>
+  --download-sources           only download sources, then exit. For making local modifications
   --cached-sources             use existing sources instead of downloading new ones
   --binutils-url <url>         set Binutils URL (default: $BINUTILS_URL)
   --binutils-branch <branch>   set Binutils branch (default: $BINUTILS_BRANCH)
@@ -154,8 +160,31 @@ download_sources()
             "https://gitweb.git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
 }
 
+apply_patches()
+{
+    printf "Applying patches\n"
+    mkdir -p $SRC_PATH/patches/ &&
+    cp -f -v $HERE/patches/*.patch $SRC_PATH/patches/ &&
+    cd $SRC_PATH/binutils &&
+    git apply --reject ../patches/binutils-dlltool-zero-ordinals.patch &&
+    cd $SRC_PATH/gcc &&
+    git apply --reject ../patches/gcc-stdcall-align.patch &&
+    git apply --reject ../patches/gcc-trap-terminate.patch &&
+    #git apply --reject ../patches/gdb-alternate-main.patch &&
+    cd $SRC_PATH/mingw-w64 &&
+    git apply --reject ../patches/gendef-no-comment.patch &&
+    git apply --reject ../patches/rand_s-win2k.patch &&
+    touch $SRC_PATH/patches/applied_patches &&
+    cd $HERE
+}
+
 build()
 {
+    if [[ -f "$SRC_PATH/patches/applied_patches" ]]; then
+        printf "Already applied patches\n"
+    else
+        apply_patches
+    fi
     local arch="$1"
     local prefix="$2"
     shift 2
@@ -226,6 +255,7 @@ build()
         "$SRC_PATH/mingw-w64/mingw-w64-crt/configure" --build="$BUILD" \
             --host="$host" --prefix="$prefix/$host" \
             --with-default-msvcrt=$LINKED_RUNTIME \
+            --with-default-win32-winnt=$WIN32_WINNT \
             --with-sysroot="$prefix/$host" $crt_lib
 
     execute "($arch): building MinGW-w64 CRT" "" \
@@ -307,6 +337,9 @@ while :; do
             ;;
         --cached-sources)
             CACHED_SOURCES=1
+            ;;
+        --download-sources)
+            JUST_SOURCES=1
             ;;
         --binutils-url)
             if [ "$2" ]; then
@@ -409,6 +442,7 @@ while :; do
         --win32-winnt)
             if [ "$2" ]; then
                 WIN32_WINNT="$2"
+                export GOT_WIN32_WINNT=1
                 shift
             else
                 arg_error "'--win32-winnt' requires a non-empty option argument"
@@ -416,18 +450,28 @@ while :; do
             ;;
         --win32-winnt=?*)
             WIN32_WINNT=${1#*=}
+            export GOT_WIN32_WINNT=1
             ;;
         --win32-winnt=)
             arg_error "'--win32-winnt' requires a non-empty option argument"
             ;;
         i586)
             BUILD_I586=1
+            if [ ! "$GOT_WIN32_WINNT" ]; then
+                WIN32_WINNT="0x0500"
+            fi
             ;;
-        i686)
+        i686|x32)
             BUILD_I686=1
+            if [ ! "$GOT_WIN32_WINNT" ]; then
+               WIN32_WINNT="0x0500"
+            fi
             ;;
-        x86_64)
+        x86_64|x64)
             BUILD_X86_64=1
+            if [ ! "$GOT_WIN32_WINNT" ]; then
+                WIN32_WINNT="0x0502"
+            fi
             ;;
         --)
             shift
@@ -449,6 +493,8 @@ done
 NUM_BUILDS=$((BUILD_I586 + BUILD_I686 + BUILD_X86_64))
 if [ "$NUM_BUILDS" -eq 0 ]; then
     arg_error "no ARCH was specified"
+else
+    printf "Using WIN32_WINNT ${WIN32_WINNT} \n"
 fi
 
 MISSING_EXECS=""
@@ -476,15 +522,15 @@ fi
 THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
 BUILD_STEPS=$((13 * NUM_BUILDS))
 
-TOTAL_STEPS=$((TOTAL_STEPS + THREADS_STEPS + BUILD_STEPS))
+if [ "$JUST_SOURCES" ]; then
+    TOTAL_STEPS=4
+else
+    TOTAL_STEPS=$((TOTAL_STEPS + THREADS_STEPS + BUILD_STEPS))
+fi
 
 if [ "$ROOT_PATH_ARG" ]; then
     ROOT_PATH=$(mkdir -p "$ROOT_PATH_ARG" && cd "$ROOT_PATH_ARG" && pwd)
 fi
-
-SRC_PATH="$ROOT_PATH/src"
-BLD_PATH="$ROOT_PATH/bld"
-LOG_FILE="$ROOT_PATH/build.log"
 
 if [ "$PREFIX" ]; then
     I586_PREFIX="$PREFIX"
@@ -504,8 +550,11 @@ rm -f "$LOG_FILE"
 touch "$LOG_FILE"
 
 
-if [ ! "$CACHED_SOURCES" ]; then
+if [ ! "$CACHED_SOURCES" ] || [ "$JUST_SOURCES" ]; then
     download_sources
+    if [ "$JUST_SOURCES" ]; then
+        exit 0;
+    fi
 else
     if [ ! -f "$SRC_PATH/config.guess" ]; then
         arg_error "no sources found, run with --keep-artifacts first"
@@ -546,7 +595,9 @@ if [ "$BUILD_X86_64" ]; then
 fi
 
 if [ ! "$KEEP_ARTIFACTS" ]; then
-    remove_path "$SRC_PATH"
+    if [ ! "$CACHED_SOURCES" ]; then
+        remove_path "$SRC_PATH"
+    fi
     remove_path "$BLD_PATH"
     remove_path "$LOG_FILE"
 fi
