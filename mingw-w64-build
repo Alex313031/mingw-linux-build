@@ -173,7 +173,9 @@ apply_patches()
     #git apply --reject ../patches/gdb-alternate-main.patch &&
     cd $SRC_PATH/mingw-w64 &&
     git apply --reject ../patches/gendef-no-comment.patch &&
-    git apply --reject ../patches/rand_s-win2k.patch &&
+    if [ "$WIN32_WINNT" == "0x0500" ]; then
+        git apply --reject ../patches/rand_s-win2k.patch
+    fi
     touch $SRC_PATH/patches/applied_patches &&
     cd $HERE
 }
