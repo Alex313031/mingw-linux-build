@@ -195,6 +195,8 @@ build()
     local host="$arch-w64-mingw32"
 
     export PATH="$prefix/bin:$PATH"
+    # Global compiler config
+    export COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=sse -mfxsr -msse -msse2" LDFLAGS="-s")
 
     remove_path "$bld_path"
     # don't remove a user defined prefix (could be /usr/local)
@@ -216,7 +218,7 @@ build()
     execute "($arch): configuring Binutils" "" \
         "$SRC_PATH/binutils/configure" --prefix="$prefix" --disable-shared \
             --enable-static --with-sysroot="$prefix" --target="$host" \
-            --disable-multilib --disable-nls --enable-lto --disable-gdb
+            --disable-multilib --disable-nls --enable-lto --disable-gdb "${COMPILER_FLAGS}"
 
     execute "($arch): building Binutils" "" \
         make -j $JOB_COUNT
@@ -231,7 +233,7 @@ build()
         "$SRC_PATH/mingw-w64/mingw-w64-headers/configure" --build="$BUILD" \
             --host="$host" --prefix="$prefix/$host" \
             --with-default-win32-winnt=$WIN32_WINNT \
-            --with-default-msvcrt=$LINKED_RUNTIME
+            --with-default-msvcrt=$LINKED_RUNTIME "${COMPILER_FLAGS}"
 
     execute "($arch): installing MinGW-w64 headers" "" \
         make install
@@ -243,7 +245,7 @@ build()
         "$SRC_PATH/gcc/configure" --target="$host" --disable-shared \
             --enable-static --disable-multilib --prefix="$prefix" \
             --enable-languages=c,c++ --disable-nls $ENABLE_THREADS \
-            $x86_dwarf2
+            $x86_dwarf2 "${COMPILER_FLAGS}"
 
     execute "($arch): building GCC (all-gcc)" "" \
         make -j $JOB_COUNT all-gcc
@@ -258,12 +260,24 @@ build()
             --host="$host" --prefix="$prefix/$host" \
             --with-default-msvcrt=$LINKED_RUNTIME \
             --with-default-win32-winnt=$WIN32_WINNT \
-            --with-sysroot="$prefix/$host" $crt_lib
+            --with-sysroot="$prefix/$host" $crt_lib "${COMPILER_FLAGS}"
 
     execute "($arch): building MinGW-w64 CRT" "" \
-        make -j $JOB_COUNT
+        make -j $JOB_COUNT VERBOSE=1
     execute "($arch): installing MinGW-w64 CRT" "" \
         make install
+
+    create_dir "$bld_path/mingw-w64-gendef"
+    change_dir "$bld_path/mingw-w64-gendef"
+
+    execute "($arch): configuring MinGW-w64 gendef" "" \
+        "$SRC_PATH/mingw-w64/mingw-w64-tools/gendef/configure" --build="$BUILD" \
+        --prefix="$prefix/$host" "${COMPILER_FLAGS}"
+
+    execute "($arch): building MinGW-w64 gendef" "" \
+        make -j $JOB_COUNT
+    execute "($arch): installing MinGW-w64 gendef" "" \
+        cp -v gendef $prefix/bin
 
     if [ "$ENABLE_THREADS" ]; then
         create_dir "$bld_path/mingw-w64-winpthreads"
@@ -272,7 +286,7 @@ build()
         execute "($arch): configuring winpthreads" "" \
             "$SRC_PATH/mingw-w64/mingw-w64-libraries/winpthreads/configure" \
                 --build="$BUILD" --host="$host" --disable-shared \
-                --enable-static --prefix="$prefix/$host"
+                --enable-static --prefix="$prefix/$host" "${COMPILER_FLAGS}"
 
         execute "($arch): building winpthreads" "" \
             make -j $JOB_COUNT
@@ -285,7 +299,7 @@ build()
 
     execute "($arch): building GCC" "" \
         make -j $JOB_COUNT
-    execute "($arch): installing GCC" "" \
+    execute "($arch): installing GCC + libs" "" \
         make install
 }
 
@@ -522,7 +536,7 @@ else
 fi
 
 THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
-BUILD_STEPS=$((13 * NUM_BUILDS))
+BUILD_STEPS=$((16 * NUM_BUILDS))
 
 if [ "$JUST_SOURCES" ]; then
     TOTAL_STEPS=4
