@@ -173,9 +173,9 @@ apply_patches()
     #git apply --reject ../patches/gdb-alternate-main.patch &&
     cd $SRC_PATH/mingw-w64 &&
     git apply --reject ../patches/gendef-no-comment.patch &&
-    if [ "$WIN32_WINNT" == "0x0500" ]; then
+    if [ "$WIN32_WINNT" == "0x0500" ] || [ "$WIN32_WINNT" == "0x0400" ]; then
         git apply --reject ../patches/rand_s-win2k.patch
-    fi
+    fi &&
     touch $SRC_PATH/patches/applied_patches &&
     cd $HERE
 }
@@ -191,30 +191,52 @@ build()
     local prefix="$2"
     shift 2
 
+    if [ "$GOT_WIN32_WINNT" ]; then
+        export _WIN32_WINNT=$WIN32_WINNT
+        printf "Using _WIN32_WINNT ${_WIN32_WINNT} for build."
+    fi
+
     local bld_path="$BLD_PATH/$arch"
-    local host="$arch-w64-mingw32"
+    if [ "$arch" = "i586" ]; then
+        local host="i686-w64-mingw32"
+    else
+        local host="$arch-w64-mingw32"
+    fi
 
     export PATH="$prefix/bin:$PATH"
-    # Global compiler config
-    export COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=sse -mfxsr -msse -msse2" LDFLAGS="-s")
 
-    remove_path "$bld_path"
+    remove_path "$bld_path" &&
     # don't remove a user defined prefix (could be /usr/local)
     if [ ! "$PREFIX" ]; then
         remove_path "$prefix"
     fi
 
+    if [ "$arch" = "i586" ]; then
+      local march="--with-arch=pentium --disable-libstdcxx-time"
+      local COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=387" LDFLAGS="-s")
+    elif [ "$arch" = "i686" ]; then
+      local march="--with-arch=pentium4"
+      local COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=sse -mfxsr -mmmx -msse -msse2" LDFLAGS="-s")
+    elif [ "$arch" = "x86_64" ]; then
+      local march="--with-arch=x86-64"
+      local COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=sse -mfxsr -mmmx -msse -msse2 -msse3" LDFLAGS="-s")
+    fi
+
     if [ "$arch" = "i586" ] || [ "$arch" = "i686" ]; then
         local x86_dwarf2="--disable-sjlj-exceptions --with-dwarf2"
         local crt_lib="--enable-lib32 --disable-lib64"
-    else
+    elif [ "$arch" = "x86_64" ]; then
         local x86_dwarf2=""
         local crt_lib="--enable-lib64 --disable-lib32"
+    else
+      printf "No matching arch"
     fi
 
-    create_dir "$bld_path/binutils"
-    change_dir "$bld_path/binutils"
+    create_dir "$bld_path/binutils" &&
+    change_dir "$bld_path/binutils" &&
 
+    export "${COMPILER_FLAGS}" &&
+    echo $CFLAGS &&
     execute "($arch): configuring Binutils" "" \
         "$SRC_PATH/binutils/configure" --prefix="$prefix" --disable-shared \
             --enable-static --with-sysroot="$prefix" --target="$host" \
@@ -245,7 +267,7 @@ build()
         "$SRC_PATH/gcc/configure" --target="$host" --disable-shared \
             --enable-static --disable-multilib --prefix="$prefix" \
             --enable-languages=c,c++ --disable-nls $ENABLE_THREADS \
-            $x86_dwarf2 "${COMPILER_FLAGS}"
+            $march $x86_dwarf2 "${COMPILER_FLAGS}"
 
     execute "($arch): building GCC (all-gcc)" "" \
         make -j $JOB_COUNT all-gcc
@@ -474,19 +496,22 @@ while :; do
         i586)
             BUILD_I586=1
             if [ ! "$GOT_WIN32_WINNT" ]; then
-                WIN32_WINNT="0x0500"
+                WIN32_WINNT="0x0400"
+                export GOT_WIN32_WINNT=1
             fi
             ;;
         i686|x32)
             BUILD_I686=1
             if [ ! "$GOT_WIN32_WINNT" ]; then
                WIN32_WINNT="0x0500"
+               export GOT_WIN32_WINNT=1
             fi
             ;;
         x86_64|x64)
             BUILD_X86_64=1
             if [ ! "$GOT_WIN32_WINNT" ]; then
                 WIN32_WINNT="0x0502"
+                export GOT_WIN32_WINNT=1
             fi
             ;;
         --)
