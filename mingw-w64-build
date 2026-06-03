@@ -1,5 +1,5 @@
 #!/bin/bash
-#
+
 # Copyright (C) 2025 Kyle Schwarz <zeranoe@gmail.com>
 # Copyright (C) 2026 Alex Frick <alex313031@gmail.com>
 #
@@ -15,7 +15,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
+
+SCRIPTNAME=$(basename "$0")
+SCRIPTVER="2.0.1"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build"
@@ -23,11 +25,13 @@ SRC_PATH="$ROOT_PATH/src"
 BLD_PATH="$ROOT_PATH/bld"
 LOG_FILE="$ROOT_PATH/build.log"
 
+# Source URLs
 MINGW_W64_URL="https://github.com/mingw-w64/mingw-w64.git"
-MINGW_W64_BRANCH="v13.x"
 BINUTILS_URL="https://git.sr.ht/~sourceware/binutils-gdb"
-BINUTILS_BRANCH="binutils-2_45-branch"
 GCC_URL="https://git.sr.ht/~sourceware/gcc"
+# What branches to checkout
+MINGW_W64_BRANCH="v13.x"
+BINUTILS_BRANCH="binutils-2_45-branch"
 GCC_BRANCH="releases/gcc-15"
 
 WIN32_WINNT="0"
@@ -37,34 +41,64 @@ LINKED_RUNTIME="msvcrt"
 
 JOB_COUNT=$(getconf _NPROCESSORS_ONLN)
 
-show_help()
-{
+IS_DEBUG=false
+USE_MMX=false
+USE_SSE2=false
+USE_SSE3=false
+USE_SSE41=false
+USE_SSE42=false
+USE_AVX=false
+USE_AVX2=false
+USE_AVX512=false
+
+# Colors
+YEL='\033[1;33m'
+CYA='\033[1;96m'
+RED='\033[1;31m'
+GRE='\033[1;32m'
+c0='\033[0m'
+bold='\033[1m'
+underline='\033[4m'
+
+show_help() {
 cat <<EOF
 Usage:
-  $0 [options] <arch>...
+  $SCRIPTNAME [options] <arch>...
 
 Archs:
-  i586    Windows 32-bit for old CPUs (Intel Pentium (MMX), AMD K5, K6, K6-2, K6-III)
-  i686    Windows 32-bit (Intel P6 [Pentium Pro], AMD K7 and newer)
-  x86_64  Windows 64-bit
+  i586   - Windows 32-bit for old CPUs without SSE (Intel Pentium (MMX), Pentium II, AMD K5, K6, K7)
+  i686   - Windows 32-bit for CPUs with SSE (Intel Pentium III and newer, Athlon XP and newer)
+  x86_64 - Windows 64-bit for CPUs with SSE2 (Intel Prescott, AMD K8 and newer)
 
 Options:
-  -h, --help                   show help
-  -j <count>, --jobs <count>   override make job count (default: $JOB_COUNT)
-  -p <path>, --prefix <path>   install location (default: $ROOT_PATH/<arch>)
-  -r <path>, --root <path>     location for sources, build artifacts and the resulting compiler (default: $ROOT_PATH)
-  --keep-artifacts             don't remove source and build files after a successful build
-  --disable-threads            disable pthreads and STL <thread>
-  --download-sources           only download sources, then exit. For making local modifications
-  --cached-sources             use existing sources instead of downloading new ones
-  --binutils-url <url>         set Binutils URL (default: $BINUTILS_URL)
-  --binutils-branch <branch>   set Binutils branch (default: $BINUTILS_BRANCH)
-  --gcc-url <url>              set GCC URL (default: $GCC_URL)
-  --gcc-branch <branch>        set GCC branch (default: $GCC_BRANCH)
-  --mingw-w64-url <url>        set MinGW-w64 url (default: $MINGW_W64_URL)
-  --mingw-w64-branch <branch>  set MinGW-w64 branch (default: $MINGW_W64_BRANCH)
-  --linked-runtime <runtime>   set MinGW Linked Runtime (default: $LINKED_RUNTIME)
-  --win32-winnt <version>      set default _WIN32_WINNT value (default: $WIN32_WINNT)
+  -h, --help                   Show help
+  --version                    Show version
+  -v, --verbose                Echo build output to the console as well as the log file
+  -j <count>, --jobs <count>   Override make job count (default: $JOB_COUNT)
+  -p <path>, --prefix <path>   Install location (default: $ROOT_PATH/<arch>)
+  -r <path>, --root <path>     Location for sources, build artifacts and the resulting compiler (default: $ROOT_PATH)
+  --keep-artifacts             Don't remove source and build files after a successful build
+  --clean                      Remove the build directory, then exit (keeps the previous build.log as build.log.old)
+  --disable-threads            Disable pthreads and STL <thread>
+  --download-sources           Only download sources, then exit. For making local modifications
+  --cached-sources             Use existing sources instead of downloading new ones
+  --binutils-url <url>         Set Binutils URL (default: $BINUTILS_URL)
+  --binutils-branch <branch>   Set Binutils branch (default: $BINUTILS_BRANCH)
+  --gcc-url <url>              Set GCC URL (default: $GCC_URL)
+  --gcc-branch <branch>        Set GCC branch (default: $GCC_BRANCH)
+  --mingw-w64-url <url>        Set MinGW-w64 url (default: $MINGW_W64_URL)
+  --mingw-w64-branch <branch>  Set MinGW-w64 branch (default: $MINGW_W64_BRANCH)
+  --linked-runtime <runtime>   Set MinGW Linked Runtime (default: $LINKED_RUNTIME)
+  --win32-winnt <version>      Set default _WIN32_WINNT value (default: $WIN32_WINNT)
+  --debug                      Create a debug build (default is release mode)
+  --mmx                        Compile with MMX, only has an effect on i586 builds. (default: $USE_MMX)
+  --sse2                       Compile with SSE2, only has an effect on i686 builds. (default: $USE_SSE2)
+  --sse3                       Compile with SSE3, i686 & x86_64 (default: $USE_SSE3)
+  --sse41                      Compile with SSE4.1, i686 & x86_64 (default: $USE_SSE41)
+  --sse42                      Compile with SSE4.2, i686 & x86_64 (default: $USE_SSE42)
+  --avx                        Compile with AVX, x86_64 only. (default: $USE_AVX)
+  --avx2                       Compile with AVX2, x86_64 only. (default: $USE_AVX2)
+  --avx512                     Compile with AVX-512, experimental x86_64 only. (default: $USE_AVX512)
 
 For possible _WIN32_WINNT values, see:
 https://learn.microsoft.com/en-us/cpp/porting/modifying-winver-and-win32-winnt
@@ -72,29 +106,30 @@ https://learn.microsoft.com/en-us/cpp/porting/modifying-winver-and-win32-winnt
 EOF
 }
 
-error_exit()
-{
-    local error_msg="$1"
-    shift 1
-
-    if [ "$error_msg" ]; then
-        printf "%s\n" "$error_msg" >&2
-    else
-        printf "an error occured\n" >&2
-    fi
-    exit 1
+show_version() {
+  printf "\n $SCRIPTNAME Version $SCRIPTVER \n"
 }
 
-arg_error()
-{
-    local error_msg="$1"
-    shift 1
+error_exit() {
+  local error_msg="$1"
+  shift 1
 
-    error_exit "$error_msg, see --help for options" "$error_msg"
+  if [ "$error_msg" ]; then
+      printf "${RED}%s${c0}\n" "$error_msg" >&2
+  else
+      printf "${RED}An error occured.${c0}\n" >&2
+  fi
+  exit 1
 }
 
-execute()
-{
+arg_error() {
+  local error_msg="$1"
+  shift 1
+
+  error_exit "$error_msg, see --help for options" "$error_msg"
+}
+
+execute() {
     local info_msg="$1"
     local error_msg="$2"
     shift 2
@@ -104,65 +139,84 @@ execute()
     fi
 
     if [ "$info_msg" ]; then
-        printf "(%d/%d): %s\n" "$CURRENT_STEP" "$TOTAL_STEPS" "$info_msg"
+        printf "${CYA}(%d/%d): %s${c0}\n" "$CURRENT_STEP" "$TOTAL_STEPS" "$info_msg"
         CURRENT_STEP=$((CURRENT_STEP + 1))
     fi
-    "$@" >>"$LOG_FILE" 2>&1 || error_exit "$error_msg, check $LOG_FILE for details"
+    if [ "$VERBOSE" ]; then
+        # mirror output to the console as well as the log file
+        # (process substitution keeps "$@"'s exit status, unlike a pipe to tee)
+        "$@" > >(tee -a "$LOG_FILE") 2>&1 || error_exit "$error_msg, check $LOG_FILE for details."
+    else
+        "$@" >>"$LOG_FILE" 2>&1 || error_exit "$error_msg, check $LOG_FILE for details."
+    fi
 }
 
-create_dir()
-{
+create_dir() {
     local path="$1"
     shift 1
 
-    execute "" "unable to create directory '$path'" \
+    execute "" "Unable to create directory '$path'" \
         mkdir -p "$path"
 }
 
-remove_path()
-{
+remove_path() {
     local path="$1"
     shift 1
 
-    execute "" "unable to remove path '$path'" \
+    execute "" "Unable to remove path '$path'" \
         rm -fr "$path"
 }
 
-change_dir()
-{
+clean_build() {
+    if [ ! -d "$ROOT_PATH" ]; then
+        printf "${YEL}Nothing to clean: '%s' does not exist.${c0}\n" "$ROOT_PATH"
+        return
+    fi
+
+    # keep the previous build log around as build.log.old
+    if [ -f "$LOG_FILE" ]; then
+        mv -fv "$LOG_FILE" "$LOG_FILE.old"
+    fi
+
+    # nuke everything else under the build directory, preserving build.log.old
+    find "$ROOT_PATH" -mindepth 1 -maxdepth 1 \
+        ! -name "$(basename "$LOG_FILE").old" -exec rm -rfv {} +
+
+    printf "${GRE}Cleaned '%s'.${c0}\n" "$ROOT_PATH"
+}
+
+change_dir() {
     local path="$1"
     shift 1
 
-    execute "" "unable to cd to directory '$path'" \
+    execute "" "Unable to cd to directory '$path'" \
         cd "$path"
 }
 
-download_sources()
-{
+download_sources() {
     remove_path "$SRC_PATH"
     create_dir "$SRC_PATH"
     change_dir "$SRC_PATH"
 
-    execute "downloading MinGW-w64 source" "unable to clone MinGW-w64, override the URL with: --mingw-w64-url <url>" \
+    execute "Downloading MinGW source..." "Unable to clone MinGW-w64, override the URL with: --mingw-w64-url <url>" \
         git clone --depth 1 -b "$MINGW_W64_BRANCH" \
             "$MINGW_W64_URL" mingw-w64
 
-    execute "downloading Binutils source" "unable to clone Binutils, to use the official mirror: --binutils-url 'https://git.sr.ht/~sourceware/binutils-gdb'" \
+    execute "Downloading Binutils source..." "Unable to clone Binutils, to use the official mirror: --binutils-url 'https://git.sr.ht/~sourceware/binutils-gdb'" \
         git clone --depth 1 -b "$BINUTILS_BRANCH" \
             "$BINUTILS_URL" binutils
 
-    execute "downloading GCC source" "unable to clone GCC, to use the official mirror: --gcc-url 'https://git.sr.ht/~sourceware/gcc'" \
+    execute "Downloading GCC source..." "Unable to clone GCC, to use the official mirror: --gcc-url 'https://git.sr.ht/~sourceware/gcc'" \
         git clone --depth 1 -b "$GCC_BRANCH" \
             "$GCC_URL" gcc
 
-    execute "downloading config.guess" "" \
+    execute "Downloading config.guess..." "" \
         curl -o config.guess \
             "https://gitweb.git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
 }
 
-apply_patches()
-{
-    printf "Applying patches\n"
+apply_patches() {
+    printf "${YEL}Applying patches...${c0}\n"
     mkdir -p $SRC_PATH/patches/ &&
     cp -f -v $HERE/patches/*.patch $SRC_PATH/patches/ &&
     cd $SRC_PATH/binutils &&
@@ -180,10 +234,9 @@ apply_patches()
     cd $HERE
 }
 
-build()
-{
+build() {
     if [[ -f "$SRC_PATH/patches/applied_patches" ]]; then
-        printf "Already applied patches\n"
+        printf "${YEL}Already applied patches.${c0}\n"
     else
         apply_patches
     fi
@@ -193,15 +246,11 @@ build()
 
     if [ "$GOT_WIN32_WINNT" ]; then
         export _WIN32_WINNT=$WIN32_WINNT
-        printf "Using _WIN32_WINNT ${_WIN32_WINNT} for build."
+        printf "${GRE}Using _WIN32_WINNT ${_WIN32_WINNT} for build. ${c0}\n"
     fi
 
     local bld_path="$BLD_PATH/$arch"
-    if [ "$arch" = "i586" ]; then
-        local host="i686-w64-mingw32"
-    else
-        local host="$arch-w64-mingw32"
-    fi
+    local host="$arch-w64-mingw32"
 
     export PATH="$prefix/bin:$PATH"
 
@@ -211,117 +260,223 @@ build()
         remove_path "$prefix"
     fi
 
-    if [ "$arch" = "i586" ]; then
-      local march="--with-arch=pentium --disable-libstdcxx-time"
-      local COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=387" LDFLAGS="-s")
-    elif [ "$arch" = "i686" ]; then
-      local march="--with-arch=pentium4"
-      local COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=sse -mfxsr -mmmx -msse -msse2" LDFLAGS="-s")
-    elif [ "$arch" = "x86_64" ]; then
-      local march="--with-arch=x86-64"
-      local COMPILER_FLAGS=(CFLAGS="-O2 -g0 -mfpmath=sse -mfxsr -mmmx -msse -msse2 -msse3" LDFLAGS="-s")
+    # TARGET_CFLAGS are used to build code that runs on the Windows target
+    # (libgcc, libstdc++, the CRT, winpthreads). These can safely restrict the
+    # instruction set to the oldest supported CPU.
+    #
+    # OPT_FLAGS / STRIP_FLAG are controlled by IS_DEBUG. The test is
+    # [ "$IS_DEBUG" = true ], NOT [ "$IS_DEBUG" ]: IS_DEBUG defaults to the
+    # string "false", which a plain non-empty test would wrongly treat as true.
+    if [ "$IS_DEBUG" = true ]; then
+      local OPT_FLAGS="-Og -g2"
+      local STRIP_FLAG=""
+    else
+      local OPT_FLAGS="-O3 -g0"
+      local STRIP_FLAG="-s"
     fi
+    # TARGET_LDFLAGS starts from the strip setting; arch blocks may append to it
+    local TARGET_LDFLAGS="$STRIP_FLAG"
+    if [ "$arch" = "i586" ]; then
+      local SIMD_FLAGS="-mfpmath=387 -mno-fxsr -mno-sse -mno-sse2"
+      local MARCH="--with-arch=pentium"
+      if [ "$USE_MMX" = true ]; then
+        SIMD_FLAGS+=" -mmx"
+        MARCH="--with-arch=pentium-mmx"
+      else
+        SIMD_FLAGS+=" -mno-mmx"
+      fi
+    elif [ "$arch" = "i686" ]; then
+      # higher SSE levels imply the lower ones; use local copies so we never
+      # mutate the global USE_* flags between successive arch builds
+      local sse2=$USE_SSE2 sse3=$USE_SSE3 sse41=$USE_SSE41 sse42=$USE_SSE42
+      [ "$sse42" = true ] && sse41=true
+      [ "$sse41" = true ] && sse3=true
+      [ "$sse3"  = true ] && sse2=true
+
+      local SIMD_FLAGS="-mfpmath=sse -mmmx"
+      local MARCH="--with-arch=pentium3"
+      if [ "$sse2" = true ]; then
+        SIMD_FLAGS+=" -msse2"
+        MARCH="--with-arch=pentium4"
+      else
+        SIMD_FLAGS+=" -mfxsr -msse"
+      fi
+      if [ "$sse3" = true ]; then
+        SIMD_FLAGS+=" -msse3"
+        MARCH="--with-arch=prescott"
+      fi
+      if [ "$sse41" = true ]; then
+        SIMD_FLAGS+=" -msse4.1"
+        MARCH="--with-arch=core2"
+      fi
+      if [ "$sse42" = true ]; then
+        SIMD_FLAGS+=" -mssse3 -msse4.2"
+        MARCH="--with-arch=nehalem"
+      fi
+    elif [ "$arch" = "x86_64" ]; then
+      # higher SIMD levels imply the lower ones; use local copies so we never
+      # mutate the global USE_* flags between successive arch builds
+      local sse3=$USE_SSE3 sse41=$USE_SSE41 sse42=$USE_SSE42
+      local avx=$USE_AVX avx2=$USE_AVX2 avx512=$USE_AVX512
+      [ "$avx512" = true ] && avx2=true
+      [ "$avx2"   = true ] && avx=true
+      [ "$avx"    = true ] && sse42=true
+      [ "$sse42"  = true ] && sse41=true
+      [ "$sse41"  = true ] && sse3=true
+
+      # SSE and SSE2 are part of the x86-64 baseline, so they are always on
+      local SIMD_FLAGS="-mfpmath=sse -mmmx -mfxsr -msse -msse2"
+      local MARCH="--with-arch=x86-64"
+      if [ "$sse3" = true ]; then
+        SIMD_FLAGS+=" -msse3"
+        MARCH="--with-arch=nocona"
+      fi
+      if [ "$sse41" = true ]; then
+        SIMD_FLAGS+=" -msse4.1"
+        MARCH="--with-arch=core2"
+      fi
+      if [ "$sse42" = true ]; then
+        SIMD_FLAGS+=" -mssse3 -msse4.2"
+        MARCH="--with-arch=x86-64-v2"
+      fi
+      if [ "$avx" = true ]; then
+        SIMD_FLAGS+=" -mavx -maes -mpclmul"
+        MARCH="--with-arch=sandybridge"
+      fi
+      if [ "$avx2" = true ]; then
+        # -fp-contract enables FP contraction (FMA) at compile time; the
+        # link-time codegen form is prefixed with an extra "f": -ffp-contract
+        SIMD_FLAGS+=" -mavx2 -mfma -mrdrnd -mf16c -mbmi -mbmi2 -fp-contract=fast"
+        TARGET_LDFLAGS+=" -ffp-contract=fast"
+        MARCH="--with-arch=x86-64-v3"
+      fi
+      if [ "$avx512" = true ]; then
+        SIMD_FLAGS+=" -mavx512f -mavx512cd -mavx512vl -mavx512bw -mavx512dq"
+        MARCH="--with-arch=x86-64-v4"
+      fi
+    fi
+    local TARGET_CFLAGS="$OPT_FLAGS $SIMD_FLAGS -pipe"
+    local TARGET_CXXFLAGS="$TARGET_CFLAGS"
+
+    # HOST_CFLAGS are used to build tools that run on the build machine
+    # (binutils, the gcc driver, gendef). They must NOT inherit the target's
+    # -mno-sse/-mfpmath=387: on x86-64 the SysV ABI returns doubles in SSE
+    # registers, so -mno-sse breaks the host build of libiberty with
+    # "SSE register return with SSE disabled".
+    # Always use SSE3, since most people using this project will be on capable CPUs
+    local HOST_CFLAGS="$OPT_FLAGS -mfpmath=sse -msse2 -msse3 -pipe"
+    local HOST_CXXFLAGS="$HOST_CFLAGS"
+    local HOST_LDFLAGS="$STRIP_FLAG"
 
     if [ "$arch" = "i586" ] || [ "$arch" = "i686" ]; then
+        # Causes top level configure warnings: Ignore, they are harmless
         local x86_dwarf2="--disable-sjlj-exceptions --with-dwarf2"
         local crt_lib="--enable-lib32 --disable-lib64"
     elif [ "$arch" = "x86_64" ]; then
-        local x86_dwarf2=""
+        local x86_dwarf2="--with-dwarf3"
         local crt_lib="--enable-lib64 --disable-lib32"
     else
-      printf "No matching arch"
+      printf "No matching arch!"
     fi
 
     create_dir "$bld_path/binutils" &&
     change_dir "$bld_path/binutils" &&
 
-    export "${COMPILER_FLAGS}" &&
-    echo $CFLAGS &&
-    execute "($arch): configuring Binutils" "" \
+    printf "${CYA}HOST_CFLAGS=${YEL}$HOST_CFLAGS${c0} ${CYA}TARGET_CFLAGS=${YEL}$TARGET_CFLAGS${c0}\n" &&
+
+    execute "($arch): Configuring Binutils" "" \
         "$SRC_PATH/binutils/configure" --prefix="$prefix" --disable-shared \
             --enable-static --with-sysroot="$prefix" --target="$host" \
-            --disable-multilib --disable-nls --enable-lto --disable-gdb "${COMPILER_FLAGS}"
+            --disable-multilib --disable-nls --enable-lto --disable-gdb \
+            CFLAGS="$HOST_CFLAGS" CXXFLAGS="$HOST_CXXFLAGS" LDFLAGS="$HOST_LDFLAGS"
 
-    execute "($arch): building Binutils" "" \
+    execute "($arch): Building Binutils" "" \
         make -j $JOB_COUNT
 
-    execute "($arch): installing Binutils" "" \
+    execute "($arch): Installing Binutils" "" \
         make install
 
     create_dir "$bld_path/mingw-w64-headers"
     change_dir "$bld_path/mingw-w64-headers"
 
-    execute "($arch): configuring MinGW-w64 headers" "" \
+    execute "($arch): Configuring MinGW headers" "" \
         "$SRC_PATH/mingw-w64/mingw-w64-headers/configure" --build="$BUILD" \
             --host="$host" --prefix="$prefix/$host" \
             --with-default-win32-winnt=$WIN32_WINNT \
-            --with-default-msvcrt=$LINKED_RUNTIME "${COMPILER_FLAGS}"
+            --with-default-msvcrt=$LINKED_RUNTIME \
+            CFLAGS="$TARGET_CFLAGS" CXXFLAGS="$TARGET_CXXFLAGS" LDFLAGS="$TARGET_LDFLAGS"
 
-    execute "($arch): installing MinGW-w64 headers" "" \
+    execute "($arch): Installing MinGW headers" "" \
         make install
 
     create_dir "$bld_path/gcc"
     change_dir "$bld_path/gcc"
 
-    execute "($arch): configuring GCC" "" \
+    execute "($arch): Configuring GCC" "" \
         "$SRC_PATH/gcc/configure" --target="$host" --disable-shared \
             --enable-static --disable-multilib --prefix="$prefix" \
             --enable-languages=c,c++ --disable-nls $ENABLE_THREADS \
-            $march $x86_dwarf2 "${COMPILER_FLAGS}"
+            $MARCH $x86_dwarf2 \
+            CFLAGS="$HOST_CFLAGS" CXXFLAGS="$HOST_CXXFLAGS" LDFLAGS="$HOST_LDFLAGS" \
+            CFLAGS_FOR_TARGET="$TARGET_CFLAGS" CXXFLAGS_FOR_TARGET="$TARGET_CXXFLAGS" \
+            LDFLAGS_FOR_TARGET="$TARGET_LDFLAGS"
 
-    execute "($arch): building GCC (all-gcc)" "" \
+    execute "($arch): Building GCC (all-gcc)" "" \
         make -j $JOB_COUNT all-gcc
-    execute "($arch): installing GCC (install-gcc)" "" \
+    execute "($arch): Installing GCC (install-gcc)" "" \
         make install-gcc
 
     create_dir "$bld_path/mingw-w64-crt"
     change_dir "$bld_path/mingw-w64-crt"
 
-    execute "($arch): configuring MinGW-w64 CRT" "" \
+    execute "($arch): Configuring MinGW CRT" "" \
         "$SRC_PATH/mingw-w64/mingw-w64-crt/configure" --build="$BUILD" \
             --host="$host" --prefix="$prefix/$host" \
             --with-default-msvcrt=$LINKED_RUNTIME \
             --with-default-win32-winnt=$WIN32_WINNT \
-            --with-sysroot="$prefix/$host" $crt_lib "${COMPILER_FLAGS}"
+            --with-sysroot="$prefix/$host" $crt_lib \
+            CFLAGS="$TARGET_CFLAGS" CXXFLAGS="$TARGET_CXXFLAGS" LDFLAGS="$TARGET_LDFLAGS"
 
-    execute "($arch): building MinGW-w64 CRT" "" \
+    execute "($arch): Building MinGW CRT" "" \
         make -j $JOB_COUNT VERBOSE=1
-    execute "($arch): installing MinGW-w64 CRT" "" \
+    execute "($arch): Installing MinGW CRT" "" \
         make install
 
     create_dir "$bld_path/mingw-w64-gendef"
     change_dir "$bld_path/mingw-w64-gendef"
 
-    execute "($arch): configuring MinGW-w64 gendef" "" \
+    execute "($arch): Configuring MinGW gendef" "" \
         "$SRC_PATH/mingw-w64/mingw-w64-tools/gendef/configure" --build="$BUILD" \
-        --prefix="$prefix/$host" "${COMPILER_FLAGS}"
+        --prefix="$prefix/$host" \
+        CFLAGS="$HOST_CFLAGS" CXXFLAGS="$HOST_CXXFLAGS" LDFLAGS="$HOST_LDFLAGS"
 
-    execute "($arch): building MinGW-w64 gendef" "" \
+    execute "($arch): Building MinGW gendef" "" \
         make -j $JOB_COUNT
-    execute "($arch): installing MinGW-w64 gendef" "" \
+    execute "($arch): Installing MinGW gendef" "" \
         cp -v gendef $prefix/bin
 
     if [ "$ENABLE_THREADS" ]; then
         create_dir "$bld_path/mingw-w64-winpthreads"
         change_dir "$bld_path/mingw-w64-winpthreads"
 
-        execute "($arch): configuring winpthreads" "" \
+        execute "($arch): Configuring winpthreads" "" \
             "$SRC_PATH/mingw-w64/mingw-w64-libraries/winpthreads/configure" \
                 --build="$BUILD" --host="$host" --disable-shared \
-                --enable-static --prefix="$prefix/$host" "${COMPILER_FLAGS}"
+                --enable-static --prefix="$prefix/$host" \
+                CFLAGS="$TARGET_CFLAGS" CXXFLAGS="$TARGET_CXXFLAGS" LDFLAGS="$TARGET_LDFLAGS"
 
-        execute "($arch): building winpthreads" "" \
+        execute "($arch): Building winpthreads" "" \
             make -j $JOB_COUNT
 
-        execute "($arch): installing winpthreads" "" \
+        execute "($arch): Installing winpthreads" "" \
             make install
     fi
 
     change_dir "$bld_path/gcc"
 
-    execute "($arch): building GCC" "" \
+    execute "($arch): Building final GCC" "" \
         make -j $JOB_COUNT
-    execute "($arch): installing GCC + libs" "" \
+    execute "($arch): Installing final GCC + libs" "" \
         make install
 }
 
@@ -330,6 +485,16 @@ while :; do
         -h|--help)
             show_help
             exit 0
+            ;;
+        --version)
+            show_version
+            exit 0
+            ;;
+        -v|--verbose)
+            VERBOSE=1
+            ;;
+        --debug)
+            IS_DEBUG=true
             ;;
         -j|--jobs)
             if [ "$2" ]; then
@@ -370,6 +535,9 @@ while :; do
         --keep-artifacts)
             KEEP_ARTIFACTS=1
             ;;
+        --clean)
+            CLEAN=1
+            ;;
         --disable-threads)
             ENABLE_THREADS=""
             ;;
@@ -393,7 +561,7 @@ while :; do
         --binutils-url=)
             arg_error "'--binutils-url' requires a non-empty option argument"
             ;;
-        --binutils-url)
+        --binutils-branch)
             if [ "$2" ]; then
                 BINUTILS_BRANCH="$2"
                 shift
@@ -514,15 +682,39 @@ while :; do
                 export GOT_WIN32_WINNT=1
             fi
             ;;
+        --mmx)
+            export WANT_MMX=1
+            ;;
+        --sse2)
+            export WANT_SSE2=1
+            ;;
+        --sse3)
+            export WANT_SSE3=1
+            ;;
+        --sse41)
+            export WANT_SSE41=1
+            ;;
+        --sse42)
+            export WANT_SSE42=1
+            ;;
+        --avx)
+            export WANT_AVX=1
+            ;;
+        --avx2)
+            export WANT_AVX2=1
+            ;;
+        --avx512)
+            export WANT_AVX512=1
+            ;;
         --)
             shift
             break
             ;;
         -?*)
-            arg_error "unknown option '$1'"
+            arg_error "Unknown option '$1'"
             ;;
         ?*)
-            arg_error "unknown arch '$1'"
+            arg_error "Unknown architecture '$1'"
             ;;
         *)
             break
@@ -531,11 +723,25 @@ while :; do
     shift
 done
 
+if [ "$ROOT_PATH_ARG" ]; then
+    if [ "$CLEAN" ] && [ ! -d "$ROOT_PATH_ARG" ]; then
+        # don't create the directory just to clean it
+        ROOT_PATH="$ROOT_PATH_ARG"
+    else
+        ROOT_PATH=$(mkdir -p "$ROOT_PATH_ARG" && cd "$ROOT_PATH_ARG" && pwd)
+    fi
+    LOG_FILE="$ROOT_PATH/build.log"
+fi
+
+# --clean is a standalone command: wipe the build dir and exit, no arch needed
+if [ "$CLEAN" ]; then
+    clean_build
+    exit 0
+fi
+
 NUM_BUILDS=$((BUILD_I586 + BUILD_I686 + BUILD_X86_64))
 if [ "$NUM_BUILDS" -eq 0 ]; then
-    arg_error "no ARCH was specified"
-else
-    printf "Using WIN32_WINNT ${WIN32_WINNT} \n"
+    arg_error "No ARCH was specified"
 fi
 
 MISSING_EXECS=""
@@ -545,7 +751,7 @@ for exec in g++ flex bison git makeinfo m4 bzip2 curl make diff; do
     fi
 done
 if [ "$MISSING_EXECS" ]; then
-    error_exit "missing required executable(s):$MISSING_EXECS"
+    error_exit "Missing required executable(s): $MISSING_EXECS"
 fi
 
 TOTAL_STEPS=0
@@ -567,10 +773,6 @@ if [ "$JUST_SOURCES" ]; then
     TOTAL_STEPS=4
 else
     TOTAL_STEPS=$((TOTAL_STEPS + THREADS_STEPS + BUILD_STEPS))
-fi
-
-if [ "$ROOT_PATH_ARG" ]; then
-    ROOT_PATH=$(mkdir -p "$ROOT_PATH_ARG" && cd "$ROOT_PATH_ARG" && pwd)
 fi
 
 if [ "$PREFIX" ]; then
@@ -598,7 +800,7 @@ if [ ! "$CACHED_SOURCES" ] || [ "$JUST_SOURCES" ]; then
     fi
 else
     if [ ! -f "$SRC_PATH/config.guess" ]; then
-        arg_error "no sources found, run with --keep-artifacts first"
+        arg_error "No sources found, run with --keep-artifacts first"
     fi
 fi
 
@@ -607,30 +809,59 @@ BUILD=$(sh "$SRC_PATH/config.guess")
 
 change_dir "$SRC_PATH/gcc"
 
-execute "" "failed to download GCC dependencies" \
+execute "" "Failed to download GCC dependencies" \
     ./contrib/download_prerequisites
 
 for i in mpc isl mpfr gmp; do
     ln -s "$SRC_PATH/gcc/$i" "$SRC_PATH/binutils/$i"
 done
 
-export CFLAGS="-g0"
-export CXXFLAGS="-g0"
-export LDFLAGS="-s"
-
 ADD_TO_PATH=()
 
 if [ "$BUILD_I586" ]; then
+    if [ "$WANT_MMX" ]; then
+      USE_MMX=true
+    fi
     build i586 "$I586_PREFIX"
     ADD_TO_PATH+=("'$I586_PREFIX/bin'")
 fi
 
 if [ "$BUILD_I686" ]; then
+    if [ "$WANT_SSE2" ]; then
+      USE_SSE2=true
+    fi
+    if [ "$WANT_SSE3" ]; then
+      USE_SSE3=true
+    fi
+    if [ "$WANT_SSE41" ]; then
+      USE_SSE41=true
+    fi
+    if [ "$WANT_SSE42" ]; then
+      USE_SSE42=true
+    fi
     build i686 "$I686_PREFIX"
     ADD_TO_PATH+=("'$I686_PREFIX/bin'")
 fi
 
 if [ "$BUILD_X86_64" ]; then
+    if [ "$WANT_SSE3" ]; then
+      USE_SSE3=true
+    fi
+    if [ "$WANT_SSE41" ]; then
+      USE_SSE41=true
+    fi
+    if [ "$WANT_SSE42" ]; then
+      USE_SSE42=true
+    fi
+    if [ "$WANT_AVX" ]; then
+      USE_AVX=true
+    fi
+    if [ "$WANT_AVX2" ]; then
+      USE_AVX2=true
+    fi
+    if [ "$WANT_AVX512" ]; then
+      USE_AVX512=true
+    fi
     build x86_64 "$X86_64_PREFIX"
     ADD_TO_PATH+=("'$X86_64_PREFIX/bin'")
 fi
@@ -643,7 +874,7 @@ if [ ! "$KEEP_ARTIFACTS" ]; then
     remove_path "$LOG_FILE"
 fi
 
-echo "complete, to use MinGW-w64 everywhere add these to your \$PATH:"
+printf "${GRE}Done! ${c0}To use MinGW-w64 everywhere add these to your \$PATH:"
 for add_to_path in "${ADD_TO_PATH[@]}"; do
     printf "\t%s\n" "$add_to_path"
 done
