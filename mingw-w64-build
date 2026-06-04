@@ -17,7 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.0.2"
+SCRIPTVER="2.0.3"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build"
@@ -25,13 +25,13 @@ SRC_PATH="$ROOT_PATH/src"
 BLD_PATH="$ROOT_PATH/bld"
 LOG_FILE="$ROOT_PATH/build.log"
 
-# Source URLs
-MINGW_W64_URL="https://github.com/mingw-w64/mingw-w64.git"
-BINUTILS_URL="https://git.sr.ht/~sourceware/binutils-gdb"
-GCC_URL="https://git.sr.ht/~sourceware/gcc"
+# Source URLs, using GitHub instead of originals for cloning speed
+MINGW_W64_URL="https://github.com/mingw-w64/mingw-w64.git" # https://git.code.sf.net/p/mingw-w64/mingw-w64
+BINUTILS_URL="https://github.com/Alex313031/binutils.git"  # https://git.sr.ht/~sourceware/binutils-gdb
+GCC_URL="https://github.com/gcc-mirror/gcc.git"            # https://git.sr.ht/~sourceware/gcc
 # What branches to checkout
 MINGW_W64_BRANCH="v14.x"
-BINUTILS_BRANCH="binutils-2_46-branch"
+BINUTILS_BRANCH="2.46" # binutils-2_46-branch
 GCC_BRANCH="releases/gcc-16"
 
 # Controls minimum Windows target, should always be set non-zero later.
@@ -39,6 +39,8 @@ WIN32_WINNT="0"
 
 # Thread model
 ENABLE_THREADS="--enable-threads=posix"
+
+# CRT compatibility. crtdll (win 95), or msvcrt (Win 98/NT 4.0 with update, 2000+)
 LINKED_RUNTIME="msvcrt"
 
 JOB_COUNT=$(getconf _NPROCESSORS_ONLN)
@@ -65,7 +67,7 @@ underline='\033[4m'
 show_help() {
 cat <<EOF
 Usage:
-  $SCRIPTNAME [options] <arch>...
+  $SCRIPTNAME [options] <arch> ...
 
 Archs:
   i586   - Windows 32-bit for old CPUs without SSE (Intel Pentium (MMX), Pentium II, AMD K5, K6, K7)
@@ -73,27 +75,29 @@ Archs:
   x86_64 - Windows 64-bit for CPUs with SSE2 (Intel Prescott, AMD K8 and newer)
 
 Options:
-  -h, --help                   Show help
-  --version                    Show version
-  -v, --verbose                Echo build output to the console as well as the log file
-  -a, --all                    Build all three archs: i586, i686 and x86_64
-  -j <count>, --jobs <count>   Override make job count (default: $JOB_COUNT)
-  -p <path>, --prefix <path>   Install location (default: $ROOT_PATH/<arch>)
-  -r <path>, --root <path>     Location for sources, build artifacts and the resulting compiler (default: $ROOT_PATH)
-  --keep-artifacts             Don't remove source and build files after a successful build
-  --clean                      Remove the build directory, then exit (keeps the previous build.log as build.log.old)
-  --disable-threads            Disable pthreads and STL <thread>
-  --download-sources           Only download sources, then exit. For making local modifications
-  --cached-sources             Use existing sources instead of downloading new ones
-  --binutils-url <url>         Set Binutils URL (default: $BINUTILS_URL)
-  --binutils-branch <branch>   Set Binutils branch (default: $BINUTILS_BRANCH)
-  --gcc-url <url>              Set GCC URL (default: $GCC_URL)
-  --gcc-branch <branch>        Set GCC branch (default: $GCC_BRANCH)
-  --mingw-w64-url <url>        Set MinGW-w64 url (default: $MINGW_W64_URL)
-  --mingw-w64-branch <branch>  Set MinGW-w64 branch (default: $MINGW_W64_BRANCH)
-  --linked-runtime <runtime>   Set MinGW Linked Runtime (default: $LINKED_RUNTIME)
-  --win32-winnt <version>      Set default _WIN32_WINNT value (default: $WIN32_WINNT)
-  --debug                      Create a debug build (default is release mode)
+  -h, --help                   Show this help.
+  --version                    Show script version.
+  -v, --verbose                Log build output to the console as well as the build.log file.
+  -a, --all                    Build all three archs: i586, i686 and x86_64.
+  -j <count>, --jobs <count>   Override make job count. (default: $JOB_COUNT)
+  -p <path>, --prefix <path>   Change install location. (default: $ROOT_PATH/<arch>)
+  -r <path>, --root <path>     Location for sources, build artifacts and the resulting compiler. (default: $ROOT_PATH)
+  --keep-artifacts             Don't remove source and build files after a successful build.
+  --clean                      Remove the build directory, then exit (keeps the previous build.log as build.log.old).
+  --disable-threads            Disable pthreads and STL <thread>.
+  --download-sources           Only download sources, then exit; for making local modifications.
+  --cached-sources             Use existing sources instead of downloading new ones and patching them.
+  --binutils-url <url>         Set Binutils URL, (default: $BINUTILS_URL)
+  --binutils-branch <branch>   Set Binutils branch, (default: $BINUTILS_BRANCH)
+  --gcc-url <url>              Set GCC URL, (default: $GCC_URL)
+  --gcc-branch <branch>        Set GCC branch, (default: $GCC_BRANCH)
+  --mingw-url <url>            Set MinGW-w64 url, (default: $MINGW_W64_URL)
+  --mingw-branch <branch>      Set MinGW-w64 branch, (default: $MINGW_W64_BRANCH)
+  --crtlib <runtime>           Set MinGW Linked CRT (crtdll, msvcrt, ucrt); should usually be left alone. (default: $LINKED_RUNTIME)
+  --win32-winnt <version>      Set default _WIN32_WINNT value for minimum Windows version target. (default: $WIN32_WINNT)
+
+Compilation Flags:
+  --debug                      Create a debug build (default is release mode).
   --mmx                        Compile with MMX, only has an effect on i586 builds. (default: $USE_MMX)
   --sse2                       Compile with SSE2, only has an effect on i686 builds. (default: $USE_SSE2)
   --sse3                       Compile with SSE3, i686 & x86_64 (default: $USE_SSE3)
@@ -101,7 +105,7 @@ Options:
   --sse42                      Compile with SSE4.2, i686 & x86_64 (default: $USE_SSE42)
   --avx                        Compile with AVX, x86_64 only. (default: $USE_AVX)
   --avx2                       Compile with AVX2, x86_64 only. (default: $USE_AVX2)
-  --avx512                     Compile with AVX-512, experimental x86_64 only. (default: $USE_AVX512)
+  --avx512                     Compile with AVX-512, x86_64 only, experimental. (default: $USE_AVX512)
 
 For possible _WIN32_WINNT values, see:
 https://learn.microsoft.com/en-us/cpp/porting/modifying-winver-and-win32-winnt
@@ -201,7 +205,7 @@ download_sources() {
     create_dir "$SRC_PATH"
     change_dir "$SRC_PATH"
 
-    execute "Downloading MinGW source..." "Unable to clone MinGW-w64, override the URL with: --mingw-w64-url <url>" \
+    execute "Downloading MinGW source..." "Unable to clone MinGW-w64, to use the official mirror: --mingw-url 'https://git.code.sf.net/p/mingw-w64/mingw-w64'" \
         git clone --depth 1 -b "$MINGW_W64_BRANCH" \
             "$MINGW_W64_URL" mingw-w64
 
@@ -213,9 +217,8 @@ download_sources() {
         git clone --depth 1 -b "$GCC_BRANCH" \
             "$GCC_URL" gcc
 
-    execute "Downloading config.guess..." "" \
-        curl -o config.guess \
-            "https://gitweb.git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.guess;hb=HEAD"
+    execute "Copying config.guess..." "" \
+        cp -fv ${HERE}/config.guess ./
 }
 
 apply_patches() {
@@ -276,7 +279,7 @@ build() {
     # [ "$IS_DEBUG" = true ], NOT [ "$IS_DEBUG" ]: IS_DEBUG defaults to the
     # string "false", which a plain non-empty test would wrongly treat as true.
     # Baseline flags that everything needs
-    local BASE_FLAGS=" -Wno-maybe-uninitialized -Wno-error"
+    local BASE_FLAGS=" -Wno-maybe-uninitialized -Wno-unused-parameter -Wno-error"
     local OPT_FLAGS="$BASE_FLAGS "
     if [ "$IS_DEBUG" = true ]; then
       local OPT_FLAGS+="-Og -g2"
@@ -618,47 +621,47 @@ while :; do
         --gcc-branch=)
             arg_error "'--gcc-branch' requires a non-empty option argument"
             ;;
-        --linked-runtime)
+        --crtlib)
             if [ "$2" ]; then
                 LINKED_RUNTIME="$2"
                 shift
             else
-                arg_error "'--linked-runtime' requires a non-empty option argument"
+                arg_error "'--crtlib' requires a non-empty option argument"
             fi
             ;;
-        --linked-runtime=?*)
+        --crtlib=?*)
             LINKED_RUNTIME=${1#*=}
             ;;
-        --linked-runtime=)
-            arg_error "'--linked-runtime' requires a non-empty option argument"
+        --crtlib=)
+            arg_error "'--crtlib' requires a non-empty option argument"
             ;;
-        --mingw-w64-url)
+        --mingw-url)
             if [ "$2" ]; then
                 MINGW_W64_URL="$2"
                 shift
             else
-                arg_error "'--mingw-w64-url' requires a non-empty option argument"
+                arg_error "'--mingw-url' requires a non-empty option argument"
             fi
             ;;
-        --mingw-w64-url=?*)
+        --mingw-url=?*)
             MINGW_W64_URL=${1#*=}
             ;;
-        --mingw-w64-url=)
-            arg_error "'--mingw-w64-url' requires a non-empty option argument"
+        --mingw-url=)
+            arg_error "'--mingw-url' requires a non-empty option argument"
             ;;
-        --mingw-w64-branch)
+        --mingw-branch)
             if [ "$2" ]; then
                 MINGW_W64_BRANCH="$2"
                 shift
             else
-                arg_error "'--mingw-w64-branch' requires a non-empty option argument"
+                arg_error "'--mingw-branch' requires a non-empty option argument"
             fi
             ;;
-        --mingw-w64-branch=?*)
+        --mingw-branch=?*)
             MINGW_W64_BRANCH=${1#*=}
             ;;
-        --mingw-w64-branch=)
-            arg_error "'--mingw-w64-branch' requires a non-empty option argument"
+        --mingw-branch=)
+            arg_error "'--mingw-branch' requires a non-empty option argument"
             ;;
         --win32-winnt)
             if [ "$2" ]; then
