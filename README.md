@@ -1,7 +1,7 @@
 # MinGW Build Scripts  <img src="./assets/mingw-w64.svg" width="38">
 
-This is a collection of bash scripts to build a [MinGW-w64](https://mingw-w64.org)
-compiler for i586 (Win32), i686 (Win32) and x86_64 (Win64).  
+This is a collection of bash scripts to build a portable [MinGW-w64](https://mingw-w64.org) + [GCC](https://gcc.gnu.org/)
+compiler toolchain for i586 (Win32), i686 (Win32) and x86_64 (Win64).  
 It primarily targets legacy Windows like Windows NT 4.0, Windows 2000, and XP, since latest upstream MinGW targets Vista+.  
 
 It currently contains two bash scripts, that can be run on Ubuntu or Debian.
