@@ -27,17 +27,21 @@ The x86_64 (x64) build targets Windows Server 2003 by default. It has SSE2 instr
  - There are flags to control the minimum Windows target, and to adjust SIMD options, all the way from SSE to SSE4 to AVX and AVX2
 
 ## Usage
- - See `--help` for all build options.  
+`mingw-linux-build.sh` / `mingw-win-build.sh` <arch> [options]
 
 To install prerequisites the script needs to run, use the `--deps` flag.  
 
 Some common options are:
 
+`--all` - Build for all architectures.  
+`--package` - Package the build(s) into .zip files, ready for distribution.  
 `--deps` - Install build deps like zip, make, autoconf, etc.  
 `--clean` - Nuke all sources and build output.  
 `--debug` - Make a debug build instead of a release build, for debugging issues in the CRT itself.  
 `--verbose` - Verbose logging output  
 `--jobs` - Adjust number of concurrent build jobs  
+
+ - See `--help` for all build options.  
 
 ### Host Platforms
 The scripts should run on Ubuntu, Debian, Cygwin, macOS (with Homebrew), and other __bash__ based shells.
@@ -45,7 +49,7 @@ The host tools compile with SSE3 by default: Any reasonably modern OS/Machine sh
 
 ### Default Prefix
 `$PWD/build/i586`, `$PWD/build/i686`, and `$PWD/build/x86_64` are the
-default install locations, but this location can be modified with the `--prefix` option.  
+default install locations, but this location can be modified with the `--prefix` option.
 To ensure the new compilers are available system-wide, add the dir` to the `$PATH`.  
 It does not need to be "installed", the prefix simply chooses where to put built files: the toolchain is fully portable.
 
