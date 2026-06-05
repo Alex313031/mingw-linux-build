@@ -1,7 +1,7 @@
-name: Build Linux toolchains (Ubuntu 22.04)
+name: Build Linux toolchains
 
-# Manual trigger only for now -- each arch compiles a from-source GCC toolchain
-# and takes a while. To build on pushes, add e.g.:
+# Each arch compiles a from-source MinGW/GCC toolchain.
+
 #   push:
 #     branches: [ main ]
 on:

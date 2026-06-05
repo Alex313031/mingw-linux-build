@@ -1,8 +1,8 @@
 name: Build Windows toolchains
 
-# Manual trigger only for now -- each arch runs a two-phase Canadian cross
-# (Phase 1 Linux-hosted intermediate + Phase 2 Windows-hosted) and takes a
-# while. To build on pushes, add e.g.:
+# Each arch runs a two-phase Canadian cross compile.
+# (Phase 1 Linux-hosted intermediate + Phase 2 Windows-hosted)
+
 #   push:
 #     branches: [ main ]
 on:
