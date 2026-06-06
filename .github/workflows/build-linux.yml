@@ -45,6 +45,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           # one zip per job: i586.zip, i686.zip, or x64.zip (x86_64)
-          name: mingw-linux-${{ matrix.arch }}
+          name: mingw_linux_${{ matrix.arch }}
           path: build/*.zip
           if-no-files-found: error
