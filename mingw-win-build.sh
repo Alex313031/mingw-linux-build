@@ -544,8 +544,9 @@ USE_AVX512=$avx512"
   local TARGET_CFLAGS="$OPT_FLAGS $SIMD_FLAGS -pipe"
   local TARGET_CXXFLAGS="$TARGET_CFLAGS"
 
-  # HOST_CFLAGS are used to build tools that run on the build machine
-  # (binutils, the gcc driver, gendef). They must NOT inherit the target's
+  # HOST_CFLAGS are used to build the toolchain tools themselves (binutils, the
+  # gcc driver, gendef) -- which run on the build machine in Phase 1 and on the
+  # Windows host in Phase 2. They must NOT inherit the target's
   # -mno-sse/-mfpmath=387: on x86-64 the SysV ABI returns doubles in SSE
   # registers, so -mno-sse breaks the host build of libiberty with
   # "SSE register return with SSE disabled".
@@ -675,7 +676,12 @@ USE_AVX512=$avx512"
   execute "($arch): Installing final GCC + libs" "Installing final GCC failed" \
       make install $VFLAGS
 
-  copy_extra_files "$arch" "$prefix"
+  # Only the Windows-hosted deliverable gets the custom MSVC-compat headers.
+  # Skipping Phase 1 keeps its throwaway cross compiler's sysroot 100% stock, so
+  # Phase 2's target libs are built against stock mingw-w64 headers.
+  if [ "$windows_host" = "windows" ]; then
+    copy_extra_files "$arch" "$prefix"
+  fi
   write_version_file "$arch" "$prefix" "$VERSION_FLAGS"
   log "${GRE}Done building $host_label toolchain for $arch.${c0}\n"
 }
