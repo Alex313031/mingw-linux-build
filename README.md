@@ -2,7 +2,7 @@
 
 This is a collection of bash scripts to build a portable [MinGW-w64](https://mingw-w64.org) toolchain
 using either the [GCC](https://gcc.gnu.org/) or [LLVM](https://llvm.org/) compiler.
-compiler toolchain for i586 (Win32), i686 (Win32) and x86_64 (Win64).  
+It includes toolchains for i586 (Win32), i686 (Win32) and x86_64 (Win64).  
 It primarily targets legacy Windows like Windows NT 4.0, Windows 2000, and XP, since latest upstream MinGW targets Vista+.  
 
 It currently contains two bash scripts, that can be run on Ubuntu or Debian.
@@ -62,7 +62,7 @@ Run --help to see the current install prefix for a given script.
 
 It does not need to be "installed", the prefix simply chooses where to put built files: the toolchain is fully portable.  
 One can run --package, and simply copy the .zip somewhere, and unpack it.
-Then, add the dir `<where_you_extracted_it>/bin` to your `$PATH`. And add/update the `$MINGW_HOME` environment variable to point to `<where_you_extracted_it>`
+Then, add the dir `<where_you_extracted_it>/bin` to your `$PATH`. And add/update the `$MINGW_HOME` environment variable to point to `<where_you_extracted_it>`.
 
 ## License
 This repo is licensed under the GNU GPL 3.0 or later.  
