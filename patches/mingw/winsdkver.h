@@ -13,12 +13,16 @@
 
 // This list contains the highest version constants supported by content in the Windows SDK.
 
+#include <winapifamily.h>
+
+#if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+
 // Legacy defines (_WIN32_WINDOWS / Win9x family tops out at WinME = 0x0490)
 #define _WIN32_MAXVER           0x0490
 #define _WIN32_WINDOWS_MAXVER   0x0490
 // Standard defines
 #define WINVER_MAXVER           0x0A00
-#define _WIN32_WINNT_MAXVER     WINVER_MAXVER
+#define _WIN32_WINNT_MAXVER     0x0A00
 // NTDDI values are 32-bit, so this must be a full NTDDI constant (not 0x0A00)
 #define NTDDI_MAXVER            0x0A000010 // NTDDI_WIN11_24H2, Build 26100
 #define _WIN32_IE_MAXVER        0x0A00
