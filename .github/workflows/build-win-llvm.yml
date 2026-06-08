@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [i586, i686, x86_64]
+        arch: [i586, i686, x64]
     # Two full from-source LLVM toolchains per arch (Phase 1 native + Phase 2
     # cross); this is heavy, so allow the maximum (6h job ceiling).
     timeout-minutes: 360
@@ -30,8 +30,11 @@ jobs:
       - name: Install build dependencies
         run: ./mingw_llvm_win.sh --deps
 
-      - name: Build ${{ matrix.arch }} and package
-        run: ./mingw_llvm_win.sh ${{ matrix.arch }} --package
+      - name: Build ${{ matrix.arch }}
+        run: ./mingw_llvm_win.sh ${{ matrix.arch }}
+
+      - name: Prepare Artifacts
+        run: mkdir -v _artifacts && cp -al build/win_llvm/${{ matrix.arch }}_llvm _artifacts/
 
       - name: Upload build log
         # always grab the log, especially useful when the build fails
@@ -39,13 +42,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log_llvm_win_${{ matrix.arch }}
-          path: build_win_llvm/build.log
+          path: build/win_llvm/build.log
           if-no-files-found: ignore
 
       - name: Upload toolchain zips
         uses: actions/upload-artifact@v4
         with:
-          # one zip per job: i586.zip, i686.zip, or x64.zip (x86_64)
+          # Upload the staged _artifacts dir (which holds exactly the one toolchain
+          # folder, <arch>_llvm). upload-artifact roots the zip at the given path's
+          # CONTENTS, so pointing at _artifacts keeps the top-level "<prefix>/" folder
+          # inside the zip (pointing at _artifacts/<prefix> would drop it). That top
+          # folder lets the GN repo's `unzip -d tools/mingw/win` land this as
+          # tools/mingw/win/<arch>_llvm/.
           name: mingw_llvm_win_${{ matrix.arch }}
-          path: build_win_llvm/*.zip
+          path: _artifacts
           if-no-files-found: error

@@ -28,10 +28,10 @@
 # CMake flags. Raise the SIMD level or _WIN32_WINNT if a runtime won't build.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.1.6"
+SCRIPTVER="2.1.7"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-ROOT_PATH="$HERE/build_llvm"
+ROOT_PATH="$HERE/build/linux_llvm"
 SRC_PATH="$ROOT_PATH/src"
 BLD_PATH="$ROOT_PATH/bld"
 LOG_FILE="$ROOT_PATH/build.log"
@@ -41,7 +41,7 @@ MINGW_W64_URL="https://github.com/mingw-w64/mingw-w64" # https://git.code.sf.net
 LLVM_URL="https://github.com/llvm/llvm-project"
 # What branches to checkout
 MINGW_W64_BRANCH="v14.x"
-LLVM_BRANCH="release/20.x"
+LLVM_BRANCH="release/22.x"
 
 # Controls minimum Windows target, should always be set non-zero later.
 WIN32_WINNT="0"
@@ -265,7 +265,7 @@ download_sources() {
   # The LLVM monorepo is large; --depth 1 keeps the clone manageable. It carries
   # clang, lld, compiler-rt, libunwind, libcxx and libcxxabi - everything that
   # replaces GCC + binutils + libgcc + libstdc++.
-  execute "Cloning LLVM source (this is large)..." "Unable to clone LLVM" \
+  execute "Cloning LLVM source..." "Unable to clone LLVM" \
       git clone $git_progress --depth 1 -b "$LLVM_BRANCH" \
       "$LLVM_URL" llvm-project
 
@@ -310,6 +310,12 @@ apply_patches() {
   # 0x0600); symlink/realpath/fchmod degrade to "not supported" on those targets.
   execute "" "Failed to apply libcxx-legacy-filesystem.patch" \
       git apply --reject ../patches/libcxx-legacy-filesystem.patch
+  # libc++ std::thread::hardware_concurrency() uses GetActiveProcessorCount
+  # (Windows 7+); the patch falls back to GetSystemInfo() on older targets
+  # (self-guarding on _WIN32_WINNT < 0x0601). Needed on LLVM 22.x (20.x already
+  # used GetSystemInfo).
+  execute "" "Failed to apply libcxx-thread-getsysteminfo.patch" \
+      git apply --reject ../patches/libcxx-thread-getsysteminfo.patch
   printf "${YEL}  Patching MinGW...${c0}\n"
   change_dir "$SRC_PATH/mingw-w64"
   execute "" "Failed to apply gendef-no-comment.patch" \
@@ -825,7 +831,7 @@ USE_AVX512=$avx512"
 
   copy_extra_files "$triple" "$prefix"
   write_version_file "$arch" "$prefix" "$VERSION_FLAGS"
-  log "${GRE}Done building for arch $arch\n"
+  log "${GRE}Done building for arch ${CYA}$arch ${c0}\n"
 }
 
 # Zip an arch's install prefix into <root>/<pkgname>.zip. The 64-bit build is
@@ -1191,9 +1197,9 @@ if [ "$PREFIX" ]; then
   I686_PREFIX="$PREFIX"
   X86_64_PREFIX="$PREFIX"
 else
-  I586_PREFIX="$ROOT_PATH/i586"
-  I686_PREFIX="$ROOT_PATH/i686"
-  X86_64_PREFIX="$ROOT_PATH/x86_64"
+  I586_PREFIX="$ROOT_PATH/i586_llvm"
+  I686_PREFIX="$ROOT_PATH/i686_llvm"
+  X86_64_PREFIX="$ROOT_PATH/x64_llvm"
 fi
 
 CURRENT_STEP=1
@@ -1276,9 +1282,9 @@ fi
 # Reaching here means every requested build succeeded (build() aborts on error).
 # Package each built arch; the 64-bit one is named x64.zip.
 if [ "$PACKAGE" ]; then
-  [ "$BUILD_I586" ]   && package_arch i586 i586
-  [ "$BUILD_I686" ]   && package_arch i686 i686
-  [ "$BUILD_X86_64" ] && package_arch x86_64 x64
+  [ "$BUILD_I586" ]   && package_arch i586_llvm i586_llvm
+  [ "$BUILD_I686" ]   && package_arch i686_llvm i686_llvm
+  [ "$BUILD_X86_64" ] && package_arch x64_llvm x64_llvm
 fi
 
 if [ ! "$KEEP_ARTIFACTS" ]; then

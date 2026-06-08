@@ -17,10 +17,10 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.1.6"
+SCRIPTVER="2.1.7"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-ROOT_PATH="$HERE/build"
+ROOT_PATH="$HERE/build/linux_gcc"
 SRC_PATH="$ROOT_PATH/src"
 BLD_PATH="$ROOT_PATH/bld"
 LOG_FILE="$ROOT_PATH/build.log"
@@ -656,7 +656,7 @@ USE_AVX512=$avx512"
 
   copy_extra_files "$arch" "$prefix"
   write_version_file "$arch" "$prefix" "$VERSION_FLAGS"
-  log "${GRE}Done building for arch $arch\n"
+  log "${GRE}Done building for arch ${CYA}$arch ${c0}\n"
 }
 
 # Zip an arch's install prefix into <root>/<pkgname>.zip. The 64-bit build is
@@ -1056,7 +1056,7 @@ if [ "$PREFIX" ]; then
 else
   I586_PREFIX="$ROOT_PATH/i586"
   I686_PREFIX="$ROOT_PATH/i686"
-  X86_64_PREFIX="$ROOT_PATH/x86_64"
+  X86_64_PREFIX="$ROOT_PATH/x64"
 fi
 
 CURRENT_STEP=1
@@ -1143,7 +1143,7 @@ fi
 if [ "$PACKAGE" ]; then
   [ "$BUILD_I586" ]   && package_arch i586 i586
   [ "$BUILD_I686" ]   && package_arch i686 i686
-  [ "$BUILD_X86_64" ] && package_arch x86_64 x64
+  [ "$BUILD_X86_64" ] && package_arch x64 x64
 fi
 
 if [ ! "$KEEP_ARTIFACTS" ]; then
