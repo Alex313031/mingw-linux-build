@@ -1,5 +1,5 @@
 diff --git a/libcxx/include/__locale_dir/support/windows.h b/libcxx/include/__locale_dir/support/windows.h
-index 56d34c6f0..80d732702 100644
+index 644ef68..8b0dcb6 100644
 --- a/libcxx/include/__locale_dir/support/windows.h
 +++ b/libcxx/include/__locale_dir/support/windows.h
 @@ -20,7 +20,8 @@
@@ -12,47 +12,42 @@ index 56d34c6f0..80d732702 100644
  
  #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
  #  pragma GCC system_header
-@@ -194,23 +195,99 @@ __strtoull(const char* __nptr, char** __endptr, int __base, __locale_t __loc) {
-   return ::_strtoui64_l(__nptr, __endptr, __base, __loc);
- }
+@@ -165,31 +166,111 @@ inline _LIBCPP_HIDE_FROM_ABI char* __setlocale(int __category, const char* __loc
+ _LIBCPP_EXPORTED_FROM_ABI __lconv_t* __localeconv(__locale_t& __loc);
+ #endif // _LIBCPP_BUILDING_LIBRARY
  
-+// The legacy msvcrt.dll (NT 4.0/2000/XP target: non-UCRT, __MSVCRT_VERSION__ <
-+// 0x0800) lacks the per-locale "_l" ctype/wctype helpers (added in msvcr80). On
-+// such CRTs, switch the thread locale around a plain call instead - this is
-+// locale-correct, and mingw-w64 supplies _configthreadlocale() for old msvcrt.
-+// Digit tests are locale-invariant, so they call the plain function directly and
-+// need no guard (which also keeps them usable outside _LIBCPP_BUILDING_LIBRARY).
++// On the legacy msvcrt.dll (NT 4.0/2000/XP target: non-UCRT, __MSVCRT_VERSION__
++// < 0x0800) the per-locale "_l" helpers are unavailable. Some are not even
++// declared by mingw (compile errors); others (e.g. _mbtowc_l, _strtod_l) link as
++// msvcrt.dll imports that the legacy system DLL does not export, so a C++ program
++// fails to LOAD on pre-Vista. Route them through a thread-locale guard around the
++// plain functions instead; mingw-w64 supplies _configthreadlocale().
 +#if defined(__MINGW32__) && !defined(_UCRT) && (!defined(__MSVCRT_VERSION__) || __MSVCRT_VERSION__ < 0x0800)
 +#  define _LIBCPP_LEGACY_MSVCRT_LOCALE 1
 +#endif
 +
-+#if defined(_LIBCPP_BUILDING_LIBRARY)
-+// Relocated here (from the bottom of the file) so the inline ctype/wctype helpers
-+// below can construct it on legacy msvcrt.
++// __locale_guard, relocated here from the bottom of the file. Defined for the
++// libc++ build (its original users) AND for legacy msvcrt (our new users) -- some
++// of which (the strtonum helpers) live outside _LIBCPP_BUILDING_LIBRARY, so the
++// guard must have a single consistent definition across the library and user TUs
++// (no ODR mismatch). It calls ::setlocale directly rather than the library-only
++// __locale::__setlocale wrapper.
++#if defined(_LIBCPP_BUILDING_LIBRARY) || defined(_LIBCPP_LEGACY_MSVCRT_LOCALE)
 +struct __locale_guard {
 +  _LIBCPP_HIDE_FROM_ABI __locale_guard(__locale_t __l) : __status(_configthreadlocale(_ENABLE_PER_THREAD_LOCALE)) {
-+    // Setting the locale can be expensive even when the locale given is
-+    // already the current locale, so do an explicit check to see if the
-+    // current locale is already the one we want.
-+    const char* __lc = __locale::__setlocale(LC_ALL, nullptr);
-+    // If every category is the same, the locale string will simply be the
-+    // locale name, otherwise it will be a semicolon-separated string listing
-+    // each category.  In the second case, we know at least one category won't
-+    // be what we want, so we only have to check the first case.
-+    if (std::strcmp(__l.__get_locale(), __lc) != 0) {
++    // Setting the locale can be expensive even when the locale given is already
++    // the current locale, so check first.
++    const char* __lc = ::setlocale(LC_ALL, nullptr);
++    if (__lc != nullptr && ::strcmp(__l.__get_locale(), __lc) != 0) {
 +      __locale_all = _strdup(__lc);
 +      if (__locale_all == nullptr)
-+        __throw_bad_alloc();
-+      __locale::__setlocale(LC_ALL, __l.__get_locale());
++        std::__throw_bad_alloc();
++      ::setlocale(LC_ALL, __l.__get_locale());
 +    }
 +  }
 +  _LIBCPP_HIDE_FROM_ABI ~__locale_guard() {
-+    // The CRT documentation doesn't explicitly say, but setlocale() does the
-+    // right thing when given a semicolon-separated list of locale settings
-+    // for the different categories in the same format as returned by
-+    // setlocale(LC_ALL, nullptr).
 +    if (__locale_all != nullptr) {
-+      __locale::__setlocale(LC_ALL, __locale_all);
++      ::setlocale(LC_ALL, __locale_all);
 +      free(__locale_all);
 +    }
 +    _configthreadlocale(__status);
@@ -60,39 +55,50 @@ index 56d34c6f0..80d732702 100644
 +  int __status;
 +  char* __locale_all = nullptr;
 +};
-+#endif // _LIBCPP_BUILDING_LIBRARY
++#endif
 +
  //
- // Character manipulation functions
+ // Strtonum functions
  //
- #if defined(_LIBCPP_BUILDING_LIBRARY)
+ 
+ // the *_l functions are prefixed on Windows, only available for msvcr80+, VS2005+
+ #if defined(_LIBCPP_MSVCRT)
 +#  if defined(_LIBCPP_LEGACY_MSVCRT_LOCALE)
-+inline _LIBCPP_HIDE_FROM_ABI int __islower(int __c, __locale_t __loc) {
++inline _LIBCPP_HIDE_FROM_ABI float __strtof(const char* __nptr, char** __endptr, __locale_t __loc) {
 +  __locale_guard __g(__loc);
-+  return ::islower(__c);
++  return ::strtof(__nptr, __endptr);
 +}
-+
-+inline _LIBCPP_HIDE_FROM_ABI int __isupper(int __c, __locale_t __loc) {
++inline _LIBCPP_HIDE_FROM_ABI long double __strtold(const char* __nptr, char** __endptr, __locale_t __loc) {
 +  __locale_guard __g(__loc);
-+  return ::isupper(__c);
++  return ::strtold(__nptr, __endptr);
 +}
 +#  else
- inline _LIBCPP_HIDE_FROM_ABI int __islower(int __c, __locale_t __loc) { return _islower_l(__c, __loc); }
- 
- inline _LIBCPP_HIDE_FROM_ABI int __isupper(int __c, __locale_t __loc) { return _isupper_l(__c, __loc); }
+ inline _LIBCPP_HIDE_FROM_ABI float __strtof(const char* __nptr, char** __endptr, __locale_t __loc) {
+   return ::_strtof_l(__nptr, __endptr, __loc);
+ }
+ inline _LIBCPP_HIDE_FROM_ABI long double __strtold(const char* __nptr, char** __endptr, __locale_t __loc) {
+   return ::_strtold_l(__nptr, __endptr, __loc);
+ }
 +#  endif
+ #else
+ _LIBCPP_EXPORTED_FROM_ABI float __strtof(const char*, char**, __locale_t);
+ _LIBCPP_EXPORTED_FROM_ABI long double __strtold(const char*, char**, __locale_t);
  #endif
  
 +#if defined(_LIBCPP_LEGACY_MSVCRT_LOCALE)
-+inline _LIBCPP_HIDE_FROM_ABI int __isdigit(int __c, __locale_t) { return ::isdigit(__c); }
-+
-+inline _LIBCPP_HIDE_FROM_ABI int __isxdigit(int __c, __locale_t) { return ::isxdigit(__c); }
++inline _LIBCPP_HIDE_FROM_ABI double __strtod(const char* __nptr, char** __endptr, __locale_t __loc) {
++  __locale_guard __g(__loc);
++  return ::strtod(__nptr, __endptr);
++}
 +#else
- inline _LIBCPP_HIDE_FROM_ABI int __isdigit(int __c, __locale_t __loc) { return _isdigit_l(__c, __loc); }
- 
- inline _LIBCPP_HIDE_FROM_ABI int __isxdigit(int __c, __locale_t __loc) { return _isxdigit_l(__c, __loc); }
+ inline _LIBCPP_HIDE_FROM_ABI double __strtod(const char* __nptr, char** __endptr, __locale_t __loc) {
+   return ::_strtod_l(__nptr, __endptr, __loc);
+ }
 +#endif
  
+ //
+ // Character manipulation functions
+ //
  #if defined(_LIBCPP_BUILDING_LIBRARY)
 +#  if defined(_LIBCPP_LEGACY_MSVCRT_LOCALE)
 +inline _LIBCPP_HIDE_FROM_ABI int __toupper(int __c, __locale_t __loc) {
@@ -104,16 +110,25 @@ index 56d34c6f0..80d732702 100644
 +  __locale_guard __g(__loc);
 +  return ::tolower(__c);
 +}
++
++inline _LIBCPP_HIDE_FROM_ABI int __strcoll(const char* __s1, const char* __s2, __locale_t __loc) {
++  __locale_guard __g(__loc);
++  return ::strcoll(__s1, __s2);
++}
++
++inline _LIBCPP_HIDE_FROM_ABI size_t __strxfrm(char* __dest, const char* __src, size_t __n, __locale_t __loc) {
++  __locale_guard __g(__loc);
++  return ::strxfrm(__dest, __src, __n);
++}
 +#  else
  inline _LIBCPP_HIDE_FROM_ABI int __toupper(int __c, __locale_t __loc) { return ::_toupper_l(__c, __loc); }
  
  inline _LIBCPP_HIDE_FROM_ABI int __tolower(int __c, __locale_t __loc) { return ::_tolower_l(__c, __loc); }
-+#  endif
- 
- inline _LIBCPP_HIDE_FROM_ABI int __strcoll(const char* __s1, const char* __s2, __locale_t __loc) {
-   return ::_strcoll_l(__s1, __s2, __loc);
-@@ -221,6 +298,25 @@ inline _LIBCPP_HIDE_FROM_ABI size_t __strxfrm(char* __dest, const char* __src, s
+@@ -201,8 +282,38 @@ inline _LIBCPP_HIDE_FROM_ABI int __strcoll(const char* __s1, const char* __s2, _
+ inline _LIBCPP_HIDE_FROM_ABI size_t __strxfrm(char* __dest, const char* __src, size_t __n, __locale_t __loc) {
+   return ::_strxfrm_l(__dest, __src, __n, __loc);
  }
++#  endif
  
  #  if _LIBCPP_HAS_WIDE_CHARACTERS
 +#    if defined(_LIBCPP_LEGACY_MSVCRT_LOCALE)
@@ -134,21 +149,48 @@ index 56d34c6f0..80d732702 100644
 +inline _LIBCPP_HIDE_FROM_ABI int __iswxdigit(wint_t __c, __locale_t __loc) { __locale_guard __g(__loc); return ::iswxdigit(__c); }
 +inline _LIBCPP_HIDE_FROM_ABI wint_t __towupper(wint_t __c, __locale_t __loc) { __locale_guard __g(__loc); return ::towupper(__c); }
 +inline _LIBCPP_HIDE_FROM_ABI wint_t __towlower(wint_t __c, __locale_t __loc) { __locale_guard __g(__loc); return ::towlower(__c); }
++
++inline _LIBCPP_HIDE_FROM_ABI int __wcscoll(const wchar_t* __ws1, const wchar_t* __ws2, __locale_t __loc) {
++  __locale_guard __g(__loc);
++  return ::wcscoll(__ws1, __ws2);
++}
++
++inline _LIBCPP_HIDE_FROM_ABI size_t __wcsxfrm(wchar_t* __dest, const wchar_t* __src, size_t __n, __locale_t __loc) {
++  __locale_guard __g(__loc);
++  return ::wcsxfrm(__dest, __src, __n);
++}
 +#    else
  inline _LIBCPP_HIDE_FROM_ABI int __iswctype(wint_t __c, wctype_t __type, __locale_t __loc) {
    return ::_iswctype_l(__c, __type, __loc);
  }
-@@ -237,6 +333,7 @@ inline _LIBCPP_HIDE_FROM_ABI int __iswpunct(wint_t __c, __locale_t __loc) { retu
- inline _LIBCPP_HIDE_FROM_ABI int __iswxdigit(wint_t __c, __locale_t __loc) { return ::_iswxdigit_l(__c, __loc); }
- inline _LIBCPP_HIDE_FROM_ABI wint_t __towupper(wint_t __c, __locale_t __loc) { return ::_towupper_l(__c, __loc); }
- inline _LIBCPP_HIDE_FROM_ABI wint_t __towlower(wint_t __c, __locale_t __loc) { return ::_towlower_l(__c, __loc); }
+@@ -227,6 +338,7 @@ inline _LIBCPP_HIDE_FROM_ABI int __wcscoll(const wchar_t* __ws1, const wchar_t*
+ inline _LIBCPP_HIDE_FROM_ABI size_t __wcsxfrm(wchar_t* __dest, const wchar_t* __src, size_t __n, __locale_t __loc) {
+   return ::_wcsxfrm_l(__dest, __src, __n, __loc);
+ }
 +#    endif
+ #  endif // _LIBCPP_HAS_WIDE_CHARACTERS
  
- inline _LIBCPP_HIDE_FROM_ABI int __wcscoll(const wchar_t* __ws1, const wchar_t* __ws2, __locale_t __loc) {
-   return ::_wcscoll_l(__ws1, __ws2, __loc);
-@@ -303,39 +400,8 @@ _LIBCPP_HIDE_FROM_ABI _LIBCPP_VARIADIC_ATTRIBUTE_FORMAT(__scanf__, 3, 4) int __s
- _LIBCPP_DIAGNOSTIC_POP
- #undef _LIBCPP_VARIADIC_ATTRIBUTE_FORMAT
+ #  if defined(__MINGW32__) && __MSVCRT_VERSION__ < 0x0800
+@@ -252,9 +364,16 @@ __mbsnrtowcs(wchar_t* __restrict, const char** __restrict, size_t, size_t, mbsta
+ _LIBCPP_EXPORTED_FROM_ABI size_t
+ __mbrtowc(wchar_t* __restrict, const char* __restrict, size_t, mbstate_t* __restrict, __locale_t);
+ 
++#if defined(_LIBCPP_LEGACY_MSVCRT_LOCALE)
++inline _LIBCPP_HIDE_FROM_ABI int __mbtowc(wchar_t* __pwc, const char* __pmb, size_t __max, __locale_t __loc) {
++  __locale_guard __g(__loc);
++  return ::mbtowc(__pwc, __pmb, __max);
++}
++#else
+ inline _LIBCPP_HIDE_FROM_ABI int __mbtowc(wchar_t* __pwc, const char* __pmb, size_t __max, __locale_t __loc) {
+   return ::_mbtowc_l(__pwc, __pmb, __max, __loc);
+ }
++#endif
+ 
+ _LIBCPP_EXPORTED_FROM_ABI size_t __mbrlen(const char* __restrict, size_t, mbstate_t* __restrict, __locale_t);
+ 
+@@ -268,39 +387,8 @@ _LIBCPP_EXPORTED_FROM_ABI _LIBCPP_ATTRIBUTE_FORMAT(__printf__, 4, 5) int __snpri
+ _LIBCPP_EXPORTED_FROM_ABI
+ _LIBCPP_ATTRIBUTE_FORMAT(__printf__, 3, 4) int __asprintf(char** __ret, __locale_t __loc, const char* __format, ...);
  
 -#if defined(_LIBCPP_BUILDING_LIBRARY)
 -struct __locale_guard {
@@ -164,7 +206,7 @@ index 56d34c6f0..80d732702 100644
 -    if (std::strcmp(__l.__get_locale(), __lc) != 0) {
 -      __locale_all = _strdup(__lc);
 -      if (__locale_all == nullptr)
--        __throw_bad_alloc();
+-        std::__throw_bad_alloc();
 -      __locale::__setlocale(LC_ALL, __l.__get_locale());
 -    }
 -  }
@@ -183,8 +225,8 @@ index 56d34c6f0..80d732702 100644
 -  char* __locale_all = nullptr;
 -};
 -#endif // _LIBCPP_BUILDING_LIBRARY
-+// NOTE: __locale_guard was relocated above (near the ctype/wctype helpers) so it
-+// is visible to the inline functions that use it on legacy msvcrt.
++// NOTE: __locale_guard was relocated above (right after __localeconv) so the
++// strtonum/ctype/wctype inline helpers can use it with one consistent definition.
  
  } // namespace __locale
  _LIBCPP_END_NAMESPACE_STD

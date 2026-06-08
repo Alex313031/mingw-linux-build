@@ -51,11 +51,16 @@ A notable exception is the rand_s-win2k.patch, which I made myself for MinGW's r
                                                                           [GetFinalPathNameByHandleW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew))
                                                                           with NT 4.0/2000/XP equivalents (`GetFileInformationByHandle` + `DeviceIoControl`); symlink creation, `canonical()` and `permissions()` degrade to "not supported" on those targets.
 
-[libcxx-legacy-msvcrt-locale.patch](./llvm/libcxx-legacy-msvcrt-locale.patch) - Replaces the per-locale `_l` ctype/wctype helpers (`_islower_l`, `_towlower_l`, ...), which only exist in msvcr80+/UCRT,
-                                                                             with a thread-locale guard around the plain functions so `libc++` builds against the legacy `msvcrt.dll` (mingw-w64 supplies `_configthreadlocale`).
+[libcxx-legacy-msvcrt-locale.patch](./llvm/libcxx-legacy-msvcrt-locale.patch) - Routes the per-locale `_l` functions `libc++` uses (`_toupper_l`/`_tolower_l`, the `_iswXXX_l`/`_towXXX_l` ctype/wctype set,
+                                                                             `_strcoll_l`/`_strxfrm_l`/`_wcscoll_l`/`_wcsxfrm_l`, and `_mbtowc_l`) through a thread-locale guard around the plain functions. These `_l` symbols only exist in
+                                                                             msvcr80+/UCRT - some fail to *compile* (mingw doesn't declare them), but others (e.g. `_mbtowc_l`) link as `msvcrt.dll` imports that the legacy system DLL doesn't export,
+                                                                             so a C++ program fails to *load* on pre-Vista with "_mbtowc_l could not be located". After this patch `libc++` imports no `_l` symbols from `msvcrt.dll`. (mingw-w64 supplies `_configthreadlocale`.)
 
 [libcxx-legacy-msvcrt-wcrtomb_s.patch](./llvm/libcxx-legacy-msvcrt-wcrtomb_s.patch) - Shims the bounds-checked [`wcrtomb_s`](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/wcrtomb-s) (msvcr80+/UCRT only)
                                                                                    with a local lambda built on the always-available [`wcrtomb`](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/wcrtomb-wcrtomb-l), for legacy `msvcrt.dll`.
 
 [libunwind-rwmutex-pre-vista.patch](./llvm/libunwind-rwmutex-pre-vista.patch) - Replaces the Vista+ [SRWLOCK](https://learn.microsoft.com/en-us/windows/win32/sync/slim-reader-writer--srw--locks)
                                                                               `libunwind`'s reader/writer mutex uses with a [CRITICAL_SECTION](https://learn.microsoft.com/en-us/windows/win32/sync/critical-section-objects) fallback (available on all NT versions), keeping `libunwind` dependency-free (no winpthreads).
+
+[libcxx-thread-getsysteminfo.patch](./llvm/libcxx-thread-getsysteminfo.patch) - Makes `std::thread::hardware_concurrency()` fall back from the Windows 7+
+                                                                              [GetActiveProcessorCount](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-getactiveprocessorcount) to [GetSystemInfo](https://learn.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getsysteminfo) on NT 4.0/2000/XP. (Needed on LLVM 22.x; 20.x already used GetSystemInfo.)

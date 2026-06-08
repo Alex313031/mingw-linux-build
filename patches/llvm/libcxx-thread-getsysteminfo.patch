@@ -1,0 +1,21 @@
+diff --git a/libcxx/src/thread.cpp b/libcxx/src/thread.cpp
+index e494574..cc6885f 100644
+--- a/libcxx/src/thread.cpp
++++ b/libcxx/src/thread.cpp
+@@ -74,7 +74,16 @@ unsigned thread::hardware_concurrency() noexcept {
+     return 0;
+   return static_cast<unsigned>(result);
+ #elif defined(_LIBCPP_WIN32API)
++#  if defined(_WIN32_WINNT) && (_WIN32_WINNT >= 0x0601)
+   return static_cast<unsigned>(GetActiveProcessorCount(ALL_PROCESSOR_GROUPS));
++#  else
++  // GetActiveProcessorCount() requires Windows 7 (_WIN32_WINNT >= 0x0601). Fall
++  // back to GetSystemInfo() on NT 4.0/2000/XP (one processor group, capped at 64
++  // CPUs - fine for these legacy targets).
++  SYSTEM_INFO __info;
++  GetSystemInfo(&__info);
++  return static_cast<unsigned>(__info.dwNumberOfProcessors);
++#  endif
+ #else // defined(CTL_HW) && defined(HW_NCPU)
+   // TODO: grovel through /proc or check cpuid on x86 and similar
+   // instructions on other architectures.
