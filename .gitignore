@@ -6,7 +6,9 @@ Thumbs.db
 
 # Built Files
 /build/*
+/build_llvm/*
 /build_win/*
+/build_win_llvm/*
 /release/
 
 # Other
