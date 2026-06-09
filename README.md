@@ -20,7 +20,7 @@ This is a fork of [Zeranoe's mingw-w64-build repo](https://github.com/Zeranoe/mi
 versions of Windows (via patching), and provide much more customizability including many [SIMD](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) optimization options.  
 See the [./patches](./patches#readme) subdirectory for more info.  
 
-<img src="./assets/Windows_NT_4.0_Workstation_logo.svg" height="64"> <img src="./assets/Windows_2000_logo.svg" height="64">
+<img src="./assets/WinNT4Workstation_Logo.svg" height="64"> <img src="./assets/Win2000Pro_Logo.svg" height="64"> <img src="./assets/WinXPPro_Logo.svg" height="64"> <img src="./assets/WinVista_Orb.svg" height="64">
 
 ## Default Branches
 * [MinGW-w64](https://mingw-w64.org) __14.x__ -> https://github.com/mingw-w64/mingw-w64/tree/v14.x
