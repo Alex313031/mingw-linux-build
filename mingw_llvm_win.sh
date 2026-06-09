@@ -40,7 +40,7 @@
 # legacy floor (no-SSE i586, NT 4.0/2000) is shared with the Linux-hosted script.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.1.8"
+SCRIPTVER="2.1.9"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build/win_llvm"
@@ -113,6 +113,7 @@ Options:
   -c, --cached-sources        Use existing sources instead of downloading new ones and patching them.
   -d, --download-sources      Only download sources, then exit; for making local modifications.
   -p, --patch                 Only apply patches to already-downloaded sources, then exit; needs no arch.
+  --clang-format              Build only clang-format.exe (no full toolchain) and copy it into <prefix>/bin; reuses Phase 1 if present.
   --clean                     Removes all sources and build artifacts, and output (keeps the previous build.log as build.log.old).
   --keep-src                  Like --clean but keeps the src/ tree (downloaded + patched sources), so a later build with -c skips re-downloading and re-patching.
   --llvm-url <url>            Set LLVM source URL, (default: $LLVM_URL)
@@ -840,7 +841,8 @@ build_phase2_windows() {
 
   # Do NOT wipe $bld_path here: Phase 1's llvm/ build tree (with the native
   # tblgens) still lives there and the LLVM cross-build needs it.
-  if [ ! "$PREFIX" ]; then
+  # --clang-format adds to the existing prefix, so don't wipe it in that mode.
+  if [ ! "$PREFIX" ] && [ ! "$CLANG_FORMAT_ONLY" ]; then
     remove_path "$prefix"
   fi
 
@@ -909,10 +911,29 @@ build_phase2_windows() {
       -DCMAKE_CXX_FLAGS="$TARGET_CXXFLAGS -pthread" \
       -DCMAKE_EXE_LINKER_FLAGS="-static -pthread -Wl,--whole-archive -lpsapi -Wl,--no-whole-archive $SUBSYS_LDFLAGS $STRIP_FLAG" \
       -DCMAKE_SHARED_LINKER_FLAGS="-static -pthread"
+
+  # --clang-format: build ONLY clang-format.exe (cross-compiled via Phase 1's
+  # clang) and drop it into the prefix's bin/, then stop -- skips the full LLVM
+  # cross, the sysroot copy, gendef and the wrappers. (Phase 1 is reused, see build().)
+  if [ "$CLANG_FORMAT_ONLY" ]; then
+    execute "($arch P2): Building clang-format.exe" "Building clang-format failed" \
+        ninja -j $JOB_COUNT clang-format
+    create_dir "$prefix/bin"
+    execute "($arch P2): Installing clang-format.exe" "Installing clang-format failed" \
+        cp -fv "$bld_path/llvm-win/bin/clang-format.exe" "$prefix/bin"
+    log "${GRE}Done building clang-format.exe for arch ${CYA}$arch ${c0}\n"
+    return 0
+  fi
+
   execute "($arch P2): Building Windows-hosted LLVM" "Building Windows LLVM failed" \
       ninja -j $JOB_COUNT
   execute "($arch P2): Installing Windows-hosted LLVM" "Installing Windows LLVM failed" \
       ninja install
+
+  # clang-format.exe ships in the toolchain bin/ (next to gendef.exe) so the
+  # toolchain can also lint C++ projects; `ninja` already built it -- copy it in.
+  execute "($arch P2): Installing clang-format.exe" "Installing clang-format failed" \
+      cp -fv "$bld_path/llvm-win/bin/clang-format.exe" "$prefix/bin"
 
   # 2. Reuse Phase 1's target runtimes -- identical PE bits regardless of where
   #    the compiler runs: the sysroot ($triple: headers + CRT + libc++/libunwind/
@@ -966,8 +987,16 @@ build() {
   compute_arch_flags "$arch"
 
   local linux_prefix="$ROOT_PATH/linux-cross/$arch"
-  log "${GRE}=== ($arch) Starting Phase 1: Linux-hosted cross toolchain ===${c0}\n"
-  build_phase1_linux "$arch" "$linux_prefix"
+  # Phase 2 cross-builds clang-format.exe with Phase 1's clang + native tblgens, so
+  # --clang-format still needs Phase 1. Reuse it if its toolchain AND build tree are
+  # still present (e.g. a prior --keep-artifacts run); otherwise build Phase 1.
+  if [ "$CLANG_FORMAT_ONLY" ] && [ -x "$linux_prefix/bin/clang" ] \
+     && [ -x "$BLD_PATH/$arch/llvm/bin/llvm-tblgen" ]; then
+    log "${YEL}=== ($arch) --clang-format: reusing existing Phase 1 toolchain + build tree ===${c0}\n"
+  else
+    log "${GRE}=== ($arch) Starting Phase 1: Linux-hosted cross toolchain ===${c0}\n"
+    build_phase1_linux "$arch" "$linux_prefix"
+  fi
 
   log "${GRE}=== ($arch) Starting Phase 2: Windows-hosted toolchain ===${c0}\n"
   build_phase2_windows "$arch" "$prefix" "$linux_prefix"
@@ -1083,6 +1112,9 @@ while :; do
         ;;
     -p|--patch)
         PATCHES_ONLY=1
+        ;;
+    --clang-format)
+        CLANG_FORMAT_ONLY=1
         ;;
     --disable-threads)
         ENABLE_THREADS=""
@@ -1319,8 +1351,8 @@ THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
 # Per arch, two phases:
 #   Phase 1 (Linux-hosted): LLVM(3) + headers(2) + crt(3) + compiler-rt(3) +
 #                           runtimes(3) = 14 (winpthreads counted separately).
-#   Phase 2 (Windows-hosted): LLVM cross(3) + 2 copies + gendef(3) = 8.
-BUILD_STEPS=$(( (14 + 8) * NUM_BUILDS ))
+#   Phase 2 (Windows-hosted): LLVM cross(3) + 2 copies + gendef(3) + clang-format(1) = 9.
+BUILD_STEPS=$(( (14 + 9) * NUM_BUILDS ))
 
 # one packaging step (the zip) per built arch
 if [ "$PACKAGE" ]; then
@@ -1331,6 +1363,10 @@ fi
 
 if [ "$JUST_SOURCES" ]; then
   TOTAL_STEPS=3
+elif [ "$CLANG_FORMAT_ONLY" ]; then
+  # per arch: Phase 2 configure(1) + build clang-format(1) + install(1); assumes
+  # Phase 1 is reused (if it has to rebuild, the counter just overshoots).
+  TOTAL_STEPS=$((TOTAL_STEPS + 3 * NUM_BUILDS))
 else
   TOTAL_STEPS=$((TOTAL_STEPS + THREADS_STEPS + BUILD_STEPS + PACKAGE_STEPS))
 fi

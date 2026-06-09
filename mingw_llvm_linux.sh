@@ -28,7 +28,7 @@
 # CMake flags. Raise the SIMD level or _WIN32_WINNT if a runtime won't build.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.1.8"
+SCRIPTVER="2.1.9"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build/linux_llvm"
@@ -98,6 +98,7 @@ Options:
   -c, --cached-sources        Use existing sources instead of downloading new ones and patching them.
   -d, --download-sources      Only download sources, then exit; for making local modifications.
   -p, --patch                 Only apply patches to already-downloaded sources, then exit; needs no arch.
+  --clang-format              Build only clang-format (no full toolchain) and copy it into <prefix>/bin; for adding/refreshing it on an existing build.
   --clean                     Removes all sources and build artifacts, and output (keeps the previous build.log as build.log.old).
   --keep-src                  Like --clean but keeps the src/ tree (downloaded + patched sources), so a later build with -c skips re-downloading and re-patching.
   --llvm-url <url>            Set LLVM source URL, (default: $LLVM_URL)
@@ -439,7 +440,7 @@ build() {
   fi
 
   if [[ -f "$SRC_PATH/patches/applied_patches" ]]; then
-    printf "${YEL}Already applied patches.${c0}\n"
+    printf "${bold}Already applied patches.${c0}\n"
   else
     apply_patches || error_exit "Failed to apply patches"
   fi
@@ -462,10 +463,14 @@ build() {
 
   export PATH="$prefix/bin:$PATH"
 
-  remove_path "$bld_path"
-  # don't remove a user defined prefix (could be /usr/local)
-  if [ ! "$PREFIX" ]; then
-    remove_path "$prefix"
+  # --clang-format reuses the existing build tree + prefix (it just drops a fresh
+  # clang-format into bin/), so don't wipe them in that mode.
+  if [ ! "$CLANG_FORMAT_ONLY" ]; then
+    remove_path "$bld_path"
+    # don't remove a user defined prefix (could be /usr/local)
+    if [ ! "$PREFIX" ]; then
+      remove_path "$prefix"
+    fi
   fi
 
   # TARGET_CFLAGS are used to build code that runs on the Windows target
@@ -665,10 +670,28 @@ USE_AVX512=$avx512"
       -DCMAKE_C_FLAGS="$HOST_CFLAGS" \
       -DCMAKE_CXX_FLAGS="$HOST_CXXFLAGS"
 
+  # --clang-format: build ONLY clang-format (a small subset of LLVM/clang -- no
+  # backend codegen) and drop it straight into the prefix's bin/, then stop. Lets
+  # you add/refresh clang-format on an existing toolchain without a full rebuild.
+  if [ "$CLANG_FORMAT_ONLY" ]; then
+    execute "($arch): Building clang-format" "Building clang-format failed" \
+        ninja -j $JOB_COUNT clang-format
+    create_dir "$prefix/bin"
+    execute "($arch): Installing clang-format" "Installing clang-format failed" \
+        cp -fv "$bld_path/llvm/bin/clang-format" "$prefix/bin"
+    log "${GRE}Done building clang-format for arch ${CYA}$arch ${c0}\n"
+    return 0
+  fi
+
   execute "($arch): Building LLVM" "Building LLVM failed" \
       ninja -j $JOB_COUNT
   execute "($arch): Installing LLVM" "Installing LLVM failed" \
       ninja install
+
+  # clang-format ships in the toolchain bin/ (next to gendef) so the toolchain can
+  # also lint C++ projects; `ninja` above already built it -- just copy it in.
+  execute "($arch): Installing clang-format" "Installing clang-format failed" \
+      cp -fv "$bld_path/llvm/bin/clang-format" "$prefix/bin"
 
   # Toolchain entry points must exist before the autotools runtimes configure,
   # since those use <wrap>-cc / <wrap>-ar etc.
@@ -948,6 +971,9 @@ while :; do
     -p|--patch)
         PATCHES_ONLY=1
         ;;
+    --clang-format)
+        CLANG_FORMAT_ONLY=1
+        ;;
     --disable-threads)
         ENABLE_THREADS=""
         ;;
@@ -1179,8 +1205,8 @@ else
 fi
 
 THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
-# per arch: LLVM(3) + headers(2) + crt(3) + compiler-rt(3) + runtimes(3) + gendef(3)
-BUILD_STEPS=$((17 * NUM_BUILDS))
+# per arch: LLVM(3) + clang-format(1) + headers(2) + crt(3) + compiler-rt(3) + runtimes(3) + gendef(3)
+BUILD_STEPS=$((18 * NUM_BUILDS))
 
 # one packaging step (the zip) per built arch
 if [ "$PACKAGE" ]; then
@@ -1191,6 +1217,9 @@ fi
 
 if [ "$JUST_SOURCES" ]; then
   TOTAL_STEPS=3
+elif [ "$CLANG_FORMAT_ONLY" ]; then
+  # per arch: configure LLVM(1) + build clang-format(1) + install(1)
+  TOTAL_STEPS=$((TOTAL_STEPS + 3 * NUM_BUILDS))
 else
   TOTAL_STEPS=$((TOTAL_STEPS + THREADS_STEPS + BUILD_STEPS + PACKAGE_STEPS))
 fi

@@ -17,7 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.1.8"
+SCRIPTVER="2.1.9"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build/win_gcc"
@@ -397,7 +397,7 @@ build_toolchain() {
   fi
 
   if [[ -f "$SRC_PATH/patches/applied_patches" ]]; then
-    printf "${YEL}Already applied patches.${c0}\n"
+    printf "${bold}Already applied patches.${c0}\n"
   else
     apply_patches || error_exit "Failed to apply patches"
   fi
