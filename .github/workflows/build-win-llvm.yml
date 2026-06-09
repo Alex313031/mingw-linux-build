@@ -6,7 +6,8 @@ name: Build Windows LLVM MinGW
 #   push:
 #     branches: [ main ]
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # run on its own
+  workflow_call:       # or be called by build-all.yml
 
 jobs:
   build:

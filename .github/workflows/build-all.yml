@@ -1,0 +1,45 @@
+name: Build All Toolchains
+
+# Master workflow: tick which toolchain builds to run, then "Run workflow".
+# Boolean inputs render as checkboxes; each ticked flavor is built by calling its
+# workflow as a reusable workflow (workflow_call), unticked ones are skipped via
+# `if:`. Selected flavors run in parallel and every per-arch artifact lands under
+# this one run. Each of the four can also still be run on its own dispatch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      linux_gcc:
+        description: Build Linux GCC
+        type: boolean
+        default: true
+      win_gcc:
+        description: Build Windows GCC
+        type: boolean
+        default: true
+      linux_llvm:
+        description: Build Linux LLVM
+        type: boolean
+        default: true
+      win_llvm:
+        description: Build Windows LLVM
+        type: boolean
+        default: true
+
+jobs:
+  linux-gcc:
+    name: Linux GCC
+    if: ${{ inputs.linux_gcc }}
+    uses: ./.github/workflows/build-linux.yml
+  win-gcc:
+    name: Windows GCC
+    if: ${{ inputs.win_gcc }}
+    uses: ./.github/workflows/build-win.yml
+  linux-llvm:
+    name: Linux LLVM
+    if: ${{ inputs.linux_llvm }}
+    uses: ./.github/workflows/build-linux-llvm.yml
+  win-llvm:
+    name: Windows LLVM
+    if: ${{ inputs.win_llvm }}
+    uses: ./.github/workflows/build-win-llvm.yml
