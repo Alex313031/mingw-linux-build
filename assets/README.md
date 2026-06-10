@@ -19,10 +19,10 @@ We also have the lovely classic Windows logos/banners:
 <img src="./WinNT4Workstation_Logo.svg" height="200">
 
 #### Windows 2000
-<img src="./Win2000Pro_Logo.svg" height="200">
+<img src="./Win2000_Logo.svg" height="200">
 
 #### Windows XP
-<img src="./WinXPPro_Logo.svg" height="200">
+<img src="./WinXP_Logo.svg" height="200">
 
 #### Windows Vista Orb
 <img src="./WinVista_Orb.svg" height="200">
