@@ -5,7 +5,7 @@
 // identical in the common, practical cases. Where the original xxd
 // documentation and behavior differ, rexxd chooses the fastest.
 //
-// w64dk: $ cc -nostartfiles -O2 -funroll-loops -s -o xxd.exe     rexxd.c
+// w64dk: $ cc -municode     -O2 -funroll-loops -s -o xxd.exe     rexxd.c
 // unix:  $ cc               -O2 -funroll-loops -s -o xxd         rexxd.c
 // bench: $ cc   -DBENCH -g3 -O2 -funroll-loops                   rexxd.c
 // tests: $ cc   -DTEST  -g3 -fsanitize=undefined -fsanitize-trap rexxd.c
@@ -2817,10 +2817,8 @@ enum {
 };
 
 #define W32(r)  __declspec(dllimport) r __stdcall
-W32(c16 **) CommandLineToArgvW(c16 *, i32 *);
 W32(uz)     CreateFileW(c16 *, i32, i32, uz, i32, i32, uz);
 W32(void)   ExitProcess(i32);
-W32(c16 *)  GetCommandLineW(void);
 W32(i32)    GetFileType(uz);
 W32(uz)     GetStdHandle(i32);
 W32(i32)    MultiByteToWideChar(i32, i32, u8 *, i32, c16 *, i32);
@@ -2903,7 +2901,7 @@ static void plt_exit(Plt *plt, i32 r)
     affirm(0);
 }
 
-void __stdcall mainCRTStartup(void)
+int wmain(int argc, c16 **wargv)
 {
     Plt plt = {0};
     setstdh(&plt, 0, GetStdHandle(-10));
@@ -2914,99 +2912,15 @@ void __stdcall mainCRTStartup(void)
     byte *mem = VirtualAlloc(0, cap, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     Arena a   = {0, mem, mem+cap};
 
-    c16  *cmd   = GetCommandLineW();
-    i32   argc  = 0;
-    c16 **wargv = CommandLineToArgvW(cmd, &argc);
-    u8  **argv  = new(&a, argc+1, u8 *);
+    u8 **argv = new(&a, argc+1, u8 *);
     for (i32 i = 0; i < argc; i++) {
         i32 len = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, 0, 0, 0, 0);
         argv[i] = new(&a, len, u8);
         WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, argv[i], len, 0, 0);
     }
 
-    i32 r = xxd(argc, argv, &plt, a.beg, a.end-a.beg);
-    ExitProcess(r);
-    affirm(0);
+    return xxd(argc, argv, &plt, a.beg, a.end-a.beg);
 }
-
-
-#elif __linux && __amd64 && !__STDC_HOSTED__
-// Like the POSIX platform, but raw syscalls and no libc. Mostly for fun.
-//   $ musl-gcc -ffreestanding -O2 -funroll-loops
-//              -s -static -nostartfiles -o xxd rexxd.c
-
-enum {
-    SYS_read    = 0,
-    SYS_write   = 1,
-    SYS_open    = 2,
-    SYS_lseek   = 8,
-    SYS_exit    = 60,
-    O_WRONLY    = 0x001,
-    O_CREAT     = 0x040,
-    O_TRUNC     = 0x200,
-};
-
-struct Plt {
-    int fds[3];
-};
-
-static iz syscall3(i32 n, uz a, uz b, uz c)
-{
-    iz r;
-    asm volatile (
-        "syscall"
-        : "=a"(r)
-        : "a"(n), "D"(a), "S"(b), "d"(c)
-        : "rcx", "r11", "memory"
-    );
-    return r;
-}
-
-static b32 plt_open(Plt *plt, i32 fd, u8 *path, b32 trunc, Arena *)
-{
-    i32 mode = fd ? O_CREAT|O_WRONLY : 0;
-    mode |= trunc ? O_TRUNC : 0;
-    plt->fds[fd] = (i32)syscall3(SYS_open, (uz)path, mode, 0666);
-    return plt->fds[fd] >= 0;
-}
-
-static i64 plt_seek(Plt *plt, i32 fd, i64 off, i32 whence)
-{
-    return syscall3(SYS_lseek, plt->fds[fd], off, whence);
-}
-
-static i32 plt_read(Plt *plt, u8 *buf, i32 len)
-{
-    return (i32)syscall3(SYS_read, plt->fds[0], (uz)buf, len);
-}
-
-static b32 plt_write(Plt *plt, i32 fd, u8 *buf, i32 len)
-{
-    return len == syscall3(SYS_write, plt->fds[fd], (uz)buf, len);
-}
-
-static void plt_exit(Plt *, i32 r)
-{
-    syscall3(SYS_exit, r, 0, 0);
-    affirm(0);
-}
-
-__attribute((used))
-static void entrypoint(uz *stack)
-{
-    static byte heap[1<<24];
-    byte *mem = heap;
-    asm ("" : "+r"(mem)); // launder: disconnect from "heap"
-    Plt plt = {{0, 1, 2}};
-    i32 r   = xxd((i32)*stack, (u8 **)(stack+1), &plt, mem, countof(heap));
-    plt_exit(0, r);
-}
-
-asm (
-    "        .globl _start\n"
-    "_start: mov   %rsp, %rdi\n"
-    "        call  entrypoint\n"
-);
 
 
 #else  // POSIX

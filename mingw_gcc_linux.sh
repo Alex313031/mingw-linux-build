@@ -17,7 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.2.0"
+SCRIPTVER="2.2.1"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build/linux_gcc"
@@ -655,6 +655,17 @@ USE_AVX512=$avx512"
   execute "($arch): Installing final GCC + libs" "Installing final GCC failed" \
       make install $VFLAGS
 
+  # Host-side utilities from assets/src, dropped in bin/ like gendef and built
+  # LAST. Native (Linux-hosted) binaries; capped at C17 (-std=gnu17) so they build
+  # on Ubuntu 22.04 / gcc 11. pkg-config is Windows-only (every Linux distro ships
+  # one), so it is omitted from the Linux toolchains.
+  local _t _n _src _xf
+  for _t in "peports:peports.c" "xxd:rexxd.c" "uuidgen:uuidgen.c"; do
+    _n=${_t%%:*}; _src=${_t#*:}; _xf=""; [ "$_n" = xxd ] && _xf="-funroll-loops"
+    execute "($arch): Building host tool $_n" "Building $_n failed" \
+        cc -std=gnu17 $OPT_FLAGS $_xf -s "$HERE/assets/src/$_src" -o "$prefix/bin/$_n"
+  done
+
   copy_extra_files "$arch" "$prefix"
   write_version_file "$arch" "$prefix" "$VERSION_FLAGS"
   log "${GRE}Done building for arch ${CYA}$arch ${c0}\n"
@@ -1029,7 +1040,7 @@ else
 fi
 
 THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
-BUILD_STEPS=$((16 * NUM_BUILDS))
+BUILD_STEPS=$((19 * NUM_BUILDS))
 
 # one GCC-prerequisites download step (runs once, not per-arch): always on a
 # fresh clone, or on cached sources only if they aren't already present

@@ -646,16 +646,13 @@ static b32 peports(i32 argc, s8 *argv, arena scratch)
 
 
 #if _WIN32
-// $ gcc -nostartfiles -o peports.exe peports.c
+// $ gcc -municode -o peports.exe peports.c
 // $ clang-cl peports.c /link /subsystem:console
 //            kernel32.lib shell32.lib libvcruntime.lib
 
 #define W32(r) __declspec(dllimport) r __stdcall
 W32(b32)    CloseHandle(uz);
-W32(c16 **) CommandLineToArgvW(c16 *, i32 *);
 W32(b32)    CreateFileW(c16 *, i32, i32, uz, i32, i32, uz);
-W32(void)   ExitProcess(i32) __attribute((noreturn));
-W32(c16 *)  GetCommandLineW(void);
 W32(uz)     GetStdHandle(i32);
 W32(i32)    MultiByteToWideChar(i32, i32, u8 *, i32, c16 *, i32);
 W32(b32)    ReadFile(uz, u8 *, i32, i32 *, uz);
@@ -728,8 +725,7 @@ static b32 oswrite(i32 fd, u8 *buf, i32 len)
     return WriteFile(h, buf, len, &len, 0);
 }
 
-__attribute((force_align_arg_pointer))
-void mainCRTStartup(void)
+int wmain(int argc, c16 **argvw)
 {
     static byte mem[sizeof(uz)<<26];  // 256/512 MiB
     arena scratch = {0};
@@ -737,10 +733,7 @@ void mainCRTStartup(void)
     asm ("" : "+r"(scratch.beg));  // launder the pointer
     scratch.end = scratch.beg + countof(mem);
 
-    c16  *cmd   = GetCommandLineW();
-    i32   argc  = 0;
-    c16 **argvw = CommandLineToArgvW(cmd, &argc);
-    s8   *argv  = new(&scratch, argc, s8);
+    s8 *argv = new(&scratch, argc, s8);
     for (i32 i = 0; i < argc; i++) {
         i32 len = WideCharToMultiByte(65001, 0, argvw[i], -1, 0, 0, 0, 0);
         argv[i].data = new(&scratch, len, u8);
@@ -749,7 +742,7 @@ void mainCRTStartup(void)
     }
 
     b32 ok = peports(argc, argv, scratch);
-    ExitProcess(!ok);
+    return !ok;
 }
 
 

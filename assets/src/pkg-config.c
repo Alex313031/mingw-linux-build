@@ -1,6 +1,6 @@
 // u-config: a small, simple, portable pkg-config clone
 // https://github.com/skeeto/u-config
-//   $ cc -nostartfiles -o pkg-config.exe pkg-config.c
+//   $ cc -municode -o pkg-config.exe pkg-config.c
 // This is free and unencumbered software released into the public domain.
 #include <stddef.h>
 #define VERSION "0.34.0"
@@ -2381,7 +2381,7 @@ static i32 cmdline_to_argv8(c16 *cmd, u8 **argv)
 }
 
 // Mingw-w64 Win32 platform layer for u-config
-// $ cc -nostartfiles -o pkg-config main_windows.c
+// $ cc -municode -o pkg-config main_windows.c
 // This is free and unencumbered software released into the public domain.
 
 #ifndef PKG_CONFIG_PREFIX
@@ -2692,8 +2692,9 @@ static config *newconfig_(os *ctx)
 }
 
 __attribute((force_align_arg_pointer))
-void mainCRTStartup(void)
+int wmain(int argc, c16 **wargv)
 {
+    (void)argc; (void)wargv;  // u-config parses GetCommandLineW() itself
     os ctx[1] = {0};
     i32 dummy;
     ctx->handles[1].h         = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -2734,8 +2735,7 @@ void mainCRTStartup(void)
     normalize_(conf->top_builddir);
 
     uconfig(conf);
-    ExitProcess(ctx->handles[1].err || ctx->handles[2].err);
-    assert(0);
+    return ctx->handles[1].err || ctx->handles[2].err;
 }
 
 static filemap os_mapfile(os *ctx, arena *perm, s8 path)

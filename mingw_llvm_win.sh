@@ -40,7 +40,7 @@
 # legacy floor (no-SSE i586, NT 4.0/2000) is shared with the Linux-hosted script.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.2.0"
+SCRIPTVER="2.2.1"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build/win_llvm"
@@ -473,7 +473,7 @@ generate_wrappers_windows() {
   # the PE subsystem/OS-version link defaults for the clang drivers).
   local wrapper="$blddir/clang-target-wrapper.exe"
   execute "($arch P2): Building toolchain entry-point wrapper" "Building wrapper failed" \
-      "$cc" -O3 -s -static -municode \
+      "$cc" $OPT_FLAGS -s -static -municode \
       -DUNICODE -D_UNICODE -DTARGET="\"$triple\"" -DEXTRA="\"$SUBSYS_LDFLAGS\"" \
       "$HERE/assets/src/clang-target-wrapper.c" -o "$wrapper"
 
@@ -958,6 +958,18 @@ build_phase2_windows() {
   # 4. Windows toolchain wrappers + clang config, then the extra MSVC-compat
   #    headers and the version manifest.
   generate_wrappers_windows "$arch" "$triple" "$prefix" "$p1/bin/$wrap-cc" "$bld_path"
+
+  # Host-side utilities from assets/src -> bin/ as Windows .exe, like gendef.exe.
+  # Built LAST with the Phase 1 cross compiler (wrapper) + the arch SIMD baseline
+  # (AUTOTOOLS_CFLAGS, so they run on the target CPU floor), -municode (they use a
+  # Unicode wmain entry), capped at C17 (-std=gnu17) for gcc 11.
+  local _t _n _src _xf
+  for _t in "peports:peports.c" "pkg-config:pkg-config.c" "xxd:rexxd.c" "uuidgen:uuidgen.c"; do
+    _n=${_t%%:*}; _src=${_t#*:}; _xf=""; [ "$_n" = xxd ] && _xf="-funroll-loops"
+    execute "($arch P2): Building host tool $_n.exe" "Building $_n failed" \
+        "$p1/bin/$wrap-cc" -municode $AUTOTOOLS_CFLAGS -std=gnu17 $_xf -s "$HERE/assets/src/$_src" -o "$prefix/bin/$_n.exe"
+  done
+
   copy_extra_files "$triple" "$prefix"
   write_version_file "$arch" "$prefix" "Windows" "$VERSION_FLAGS"
   log "${GRE}Done building Windows-hosted toolchain for ${CYA}$arch ${c0}\n"
@@ -1351,8 +1363,9 @@ THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
 # Per arch, two phases:
 #   Phase 1 (Linux-hosted): LLVM(3) + headers(2) + crt(3) + compiler-rt(3) +
 #                           runtimes(3) = 14 (winpthreads counted separately).
-#   Phase 2 (Windows-hosted): LLVM cross(3) + 2 copies + gendef(3) + clang-format(1) = 9.
-BUILD_STEPS=$(( (14 + 9) * NUM_BUILDS ))
+#   Phase 2 (Windows-hosted): LLVM cross(3) + 2 copies + gendef(3) + clang-format(1)
+#                             + 4 host tools = 13.
+BUILD_STEPS=$(( (14 + 13) * NUM_BUILDS ))
 
 # one packaging step (the zip) per built arch
 if [ "$PACKAGE" ]; then

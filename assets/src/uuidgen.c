@@ -1,7 +1,7 @@
 // uuidgen: drop-in replacement for Microsoft uuidgen, for widl
 // Chris Wellons <wellons@nullprogram.com>
 //
-// w64dk: $ cc -nostartfiles -Oz -s -o uuidgen.exe uuidgen.c -lmemory
+// w64dk: $ cc -municode     -Os -s -o uuidgen.exe uuidgen.c
 // unix:  $ cc               -Oz -s -o uuidgen     uuidgen.c
 //
 // Features versus the original uuidgen:
@@ -22,7 +22,7 @@
 #define N "\r\n"
 
 #define countof(a)      (iz)(sizeof(a) / sizeof(*(a)))
-#define affirm(c)       while (!(c)) unreachable()
+#define affirm(c)       while (!(c)) __builtin_unreachable()
 #define S(s)            (Str){(u8 *)s, sizeof(s)-1}
 #define new(a, n, t)    (t *)alloc(a, n, sizeof(t), _Alignof(t))
 #define maxof(t)        ((t)-1<1 ? (((t)1<<(sizeof(t)*8-2))-1)*2+1 : (t)-1)
@@ -361,11 +361,8 @@ static i32 uuidgen(i32 argc, u8 **argv, Plt *plt, Arena scratch, Block seed)
 typedef uint16_t    char16_t;
 typedef char16_t    c16;
 
-#define W32 [[gnu::dllimport, gnu::stdcall]]
-W32 c16   **CommandLineToArgvW(c16 *, i32 *);
+#define W32 __attribute__((dllimport, stdcall))
 W32 uz      CreateFileW(c16 *, i32, i32, uz, i32, i32, uz);
-W32 void    ExitProcess[[noreturn]](i32);
-W32 c16    *GetCommandLineW();
 W32 b32     GetConsoleMode(uz, i32 *);
 W32 uz      GetProcAddress(uz, char *);
 W32 uz      GetStdHandle(i32);
@@ -381,8 +378,8 @@ enum {
     CREATE_ALWAYS           = 2,
     FILE_ATTRIBUTE_NORMAL   = 0x80,
     FILE_SHARE_ALL          = 7,
-    GENERIC_READ            = (i32)0x8000'0000,
-    GENERIC_WRITE           = (i32)0x4000'0000,
+    GENERIC_READ            = (i32)0x80000000,
+    GENERIC_WRITE           = (i32)0x40000000,
 };
 
 static i32 trunc32(iz n)
@@ -438,16 +435,12 @@ static b32 plt_redirect(Plt *plt, u8 *path, Arena scratch)
     return plt->h[1] != (uz)-1;
 }
 
-[[gnu::stdcall]]
-i32 mainCRTStartup()
+int wmain(int argc, c16 **wargv)
 {
     static u8 mem[1<<21];
     Arena a = {mem, mem+countof(mem)};
 
-    c16  *cmd   = GetCommandLineW();
-    i32   argc  = 0;
-    c16 **wargv = CommandLineToArgvW(cmd, &argc);
-    u8  **argv  = new(&a, argc+1, u8 *);
+    u8 **argv = new(&a, argc+1, u8 *);
     for (i32 i = 0; i < argc; i++) {
         i32 len = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, 0, 0, 0, 0);
         argv[i] = new(&a, len, u8);
@@ -460,95 +453,14 @@ i32 mainCRTStartup()
     u8 (*RtlGenRandom)(void *, i32) = (u8 (*)(void *, i32))proc;
     if (!RtlGenRandom || !RtlGenRandom(&seed, sizeof(seed))) {
         GetSystemTimeAsFileTime(&seed.x);
-        seed.y = (uz)mainCRTStartup;  // ASLR
+        seed.y = (uz)wmain;  // ASLR
     }
 
     Plt *plt = new(&a, 1, Plt);
     plt->h[1] = GetStdHandle(-11);
     plt->h[2] = GetStdHandle(-12);
-    i32 r = uuidgen(argc, argv, plt, a, seed);
-    ExitProcess(r);
-    unreachable();
+    return uuidgen(argc, argv, plt, a, seed);
 }
-
-
-#elif __linux && __amd64 && !__STDC_HOSTED__  // mostly for fun
-// $ cc -static -ffreestanding -nostdlib -Oz -s -o uuidgen uuidgen.c
-
-enum {
-    SYS_write   = 1,
-    SYS_open    = 2,
-    SYS_exit    = 60,
-    O_WRONLY    = 0x001,
-    O_CREAT     = 0x040,
-    O_TRUNC     = 0x200,
-};
-
-struct Plt { i32 fd[3]; };
-
-static iz syscall3(i32 n, uz a, uz b, uz c)
-{
-    iz r;
-    asm volatile (
-        "syscall"
-        : "=a"(r)
-        : "a"(n), "D"(a), "S"(b), "d"(c)
-        : "rcx", "r11", "memory"
-    );
-    return r;
-}
-
-static b32 plt_write(Plt *plt, i32 fd, u8 *buf, i32 len)
-{
-    return syscall3(SYS_write, (uz)plt->fd[fd], (uz)buf, touz(len)) == len;
-}
-
-static void plt_printpath(Plt *, u8 *path, Arena)
-{
-    iz len = 0;
-    for (; path[len]; len++) {}
-    syscall3(SYS_write, 2, (uz)path, touz(len));
-}
-
-static b32 plt_redirect(Plt *plt, u8 *path, Arena)
-{
-    i32 flags = O_CREAT | O_TRUNC | O_WRONLY;
-    plt->fd[1] = (i32)syscall3(SYS_open, (uz)path, (uz)flags, 0666);
-    return plt->fd[1] >= 0;
-}
-
-static u64 rand64()
-{
-    u64 r;
-    asm volatile (
-        "0:  rdrand %0\n"
-        "    jnc    0b\n"
-        : "=r"(r)
-    );
-    return r;
-}
-
-[[gnu::used]]
-static void entrypoint(uz *stack)
-{
-    static u8 mem[1<<21];
-    Arena a    = (Arena){mem, mem+countof(mem)};
-
-    i32   argc = (i32)*stack;
-    u8  **argv = (u8 **)(stack+1);
-
-    Block seed = {rand64(), rand64()};
-
-    i32 r = uuidgen(argc, argv, &(Plt){{0, 1, 2}}, a, seed);
-    asm volatile ("syscall" :: "a"(SYS_exit), "D"(r));
-    __builtin_unreachable();
-}
-
-asm (
-    "        .globl _start\n"
-    "_start: mov   %rsp, %rdi\n"
-    "        call  entrypoint\n"
-);
 
 
 #else  // POSIX
@@ -583,7 +495,7 @@ int main(int argc, char **argv)
     if (rnd == -1 || read(rnd, &seed, sizeof(seed)) != (iz)sizeof(seed)) {
         struct timespec ts = {};
         clock_gettime(CLOCK_REALTIME, &ts);
-        seed.x ^= (u64)ts.tv_sec*1'000'000'000 + (u64)ts.tv_nsec;
+        seed.x ^= (u64)ts.tv_sec*1000000000 + (u64)ts.tv_nsec;
         seed.y ^= (uz)main;  // ASLR
     }
 

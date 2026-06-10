@@ -17,7 +17,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.2.0"
+SCRIPTVER="2.2.1"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build/win_gcc"
@@ -704,6 +704,16 @@ USE_AVX512=$avx512"
   # Skipping Phase 1 keeps its throwaway cross compiler's sysroot 100% stock, so
   # Phase 2's target libs are built against stock mingw-w64 headers.
   if [ "$windows_host" = "windows" ]; then
+    # Host-side utilities from assets/src -> bin/ as Windows .exe, like gendef.exe.
+    # Built LAST with the Phase 1 cross gcc + the arch SIMD baseline (HOST_CFLAGS,
+    # so they run on the target CPU floor), -municode (they use a Unicode wmain
+    # entry), capped at C17 (-std=gnu17) for Ubuntu 22.04 / gcc 11.
+    local _t _n _src _xf
+    for _t in "peports:peports.c" "pkg-config:pkg-config.c" "xxd:rexxd.c" "uuidgen:uuidgen.c"; do
+      _n=${_t%%:*}; _src=${_t#*:}; _xf=""; [ "$_n" = xxd ] && _xf="-funroll-loops"
+      execute "($arch): Building host tool $_n.exe" "Building $_n failed" \
+          "$host-gcc" -municode $HOST_CFLAGS -std=gnu17 $_xf -s "$HERE/assets/src/$_src" -o "$prefix/bin/$_n.exe"
+    done
     copy_extra_files "$arch" "$prefix"
   fi
   write_version_file "$arch" "$prefix" "$VERSION_FLAGS"
@@ -1104,7 +1114,7 @@ else
 fi
 
 THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
-BUILD_STEPS=$((16 * 2 * NUM_BUILDS))
+BUILD_STEPS=$(( (16 * 2 + 4) * NUM_BUILDS ))
 
 # one GCC-prerequisites download step (runs once, not per-arch): always on a
 # fresh clone, or on cached sources only if they aren't already present

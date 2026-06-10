@@ -28,7 +28,7 @@
 # CMake flags. Raise the SIMD level or _WIN32_WINNT if a runtime won't build.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="2.2.0"
+SCRIPTVER="2.2.1"
 
 export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 ROOT_PATH="$HERE/build/linux_llvm"
@@ -852,6 +852,17 @@ USE_AVX512=$avx512"
   execute "($arch): Installing MinGW gendef" "Installing gendef failed" \
       cp -v gendef $prefix/bin
 
+  # Host-side utilities from assets/src, dropped in bin/ like gendef and built
+  # LAST. Native (Linux-hosted) binaries; capped at C17 (-std=gnu17) so they build
+  # on Ubuntu 22.04 / gcc 11. pkg-config is Windows-only (every Linux distro ships
+  # one), so it is omitted from the Linux toolchains.
+  local _t _n _src _xf
+  for _t in "peports:peports.c" "xxd:rexxd.c" "uuidgen:uuidgen.c"; do
+    _n=${_t%%:*}; _src=${_t#*:}; _xf=""; [ "$_n" = xxd ] && _xf="-funroll-loops"
+    execute "($arch): Building host tool $_n" "Building $_n failed" \
+        cc -std=gnu17 $OPT_FLAGS $_xf -s "$HERE/assets/src/$_src" -o "$prefix/bin/$_n"
+  done
+
   copy_extra_files "$triple" "$prefix"
   write_version_file "$arch" "$prefix" "$VERSION_FLAGS"
   log "${GRE}Done building for arch ${CYA}$arch ${c0}\n"
@@ -1206,7 +1217,7 @@ fi
 
 THREADS_STEPS=$((THREADS_STEPS * NUM_BUILDS))
 # per arch: LLVM(3) + clang-format(1) + headers(2) + crt(3) + compiler-rt(3) + runtimes(3) + gendef(3)
-BUILD_STEPS=$((18 * NUM_BUILDS))
+BUILD_STEPS=$((21 * NUM_BUILDS))
 
 # one packaging step (the zip) per built arch
 if [ "$PACKAGE" ]; then

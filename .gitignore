@@ -7,7 +7,7 @@ Thumbs.db
 # Built Files
 # all four toolchains build under ./build/{linux_gcc,win_gcc,linux_llvm,win_llvm}
 /build/
-/release/
+/Release/
 
 # Artifacts temp dir used by GitHub runners
 /_artifacts/
